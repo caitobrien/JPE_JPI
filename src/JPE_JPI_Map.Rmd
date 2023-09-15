@@ -16,5 +16,91 @@ install.packages("rbokeh")
 library(leaflet)
 library(tmap)
 library(rbokeh)
+
+library(sf)
+library(tidyverse)
+library(tidygeocoder)#converts addresses to sf objects
 ```
 
+
+```{r}
+#plot locations
+    locs<-tibble(name = c("Delta Entry", "RBDD", "LSNFH", "Shasta Dam", "Keswick Dam", "Battle Creek", "Sacramento", "Caldwell Park"), 
+           lat = c(38.581107,40.146709, 40.716690, 40.718939, 40.612332, 40.367241,38.5816, 40.592527),
+           long = c(-121.508072,-122.154110,-122.415975,-122.418626,-122.445812, -122.169962,-121.4944, -122.391859),
+           ref = c("reciever", "reciever", "hatchery", "dam", "dam", "hatchery", "city", "hatchery"))
+?st_as_sf()
+
+loc<- data.frame(name = c("Delta Entry", "RBDD", "LSNFH", 
+                          "Shasta Dam", "Keswick Dam", "Battle Creek", 
+                          "Sacramento", "Caldwell Park"), 
+                 ref = c("reciever", "reciever", "hatchery", 
+                         "dam", "dam", "hatchery", 
+                         "city", "hatchery"),
+                 address = "Sacramento, CA 95814"
+                 )
+
+sf.try <-
+locs %>%
+  rowwise() %>%
+  mutate(geometry = st_geometry(st_point(c(lat, long)))) %>% 
+  select(-lat, -long) %>%
+  ungroup()
+sf.try
+
+locs.sf<-st_as_sf(sf.try, sf_column_name = "geometry", crs = 4326)
+
+
+
+getColor <- function(locs) {
+  sapply(locs$ref, function(ref) {
+  if(ref == "reciever") {
+    "green"
+  } else if(ref == "hatchery") {
+    "orange"
+  } else {
+    "red"
+  } })
+}
+
+getColor(locs)
+
+icons <- awesomeIcons(
+  icon = "analytics",
+  iconColor = 'black',
+  library = 'ion',
+  markerColor = "orange"
+)
+
+
+
+#
+leaflet(locs) %>% 
+  #setView(-121, 40, zoom = 6.5) %>% 
+  # base maps
+  addTiles(group = "OSM Base layer") %>% 
+  addProviderTiles(providers$Esri.WorldGrayCanvas, group = "Gray") %>% 
+  addProviderTiles(providers$Stamen.Toner, group = "Dark") %>% 
+  # overlay 1
+  addCircleMarkers(group = "Fish") %>% 
+  addAwesomeMarkers( icon=icons, label = ~as.character(name), group = "Data") %>% 
+  addCircleMarkers(group = "JPE timeline") %>% 
+  # layer control
+  addLayersControl(
+      baseGroups = c("OSM Base Layer", "Gray", "Dark"),
+      overlayGroups = c("Fish", "Data", "JPE timeline"),
+      options = layersControlOptions(collapsed = FALSE)
+    )
+
+
+
+leaflet(locs) %>% addMarkers() %>%  addTiles()
+
+
+leaflet(locs) %>% addTiles() %>% addCircleMarkers()
+
+
+```
+
+
+Options could include using layers to add Fish Lifecycle by adding markers/polygons with attached blurps colored by seasonality than with another layer featuring data and highlights where and when data is being collected plus a third layer highlighting which component of the JPE is being highlighted in the model. 
