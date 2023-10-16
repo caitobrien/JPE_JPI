@@ -10,6 +10,7 @@ library(ggplot2)
 library(maps)
 library(ggmap)
 library(mapdata)
+library(here)
 
 
 #quick example
@@ -58,15 +59,10 @@ tail(ca_df)
   geom_polygon(data = ca_county, fill = NA, color = "white") +
   geom_polygon(color = "black", fill = NA)  # get the state border back on top
 
-  #add rivers
-  ca_base_county + geom_sf(mapping = aes(group = group, x=long, y=lat), data = CAriver.crs) +
-  coord_sf()
-  
-   #zoom in
-    ca_base_county + coord_fixed(xlim = c(-124.5, -119.0),  ylim = c(37.5,42), ratio = 1.1)+ theme_bw() +
-    ditch_the_axes
+
+
 #read in river data
-    CAwater<-st_read(dsn = here("NHD_Major_Rivers"))
+    CAwater<-st_read(dsn = here("data","NHD_Major_Rivers"))
     CAriver<-st_zm(CAwater, drop = T, what = "ZM") #drop M level to be able to use--not sure why
     #plot just river data
     ggplot() +
@@ -76,7 +72,7 @@ tail(ca_df)
     #CAriver.crs<- st_transform(CAriver,
     #CRS("+proj=longlat +datum=WGS84"))
   #read in resevoir data
-    CArez<-st_read(dsn = here("NHD_Major_Lakes_and_Reservoirs"))
+    CArez<-st_read(dsn = here("data", "NHD_Major_Lakes_and_Reservoirs"))
     CArez<-st_zm(CArez, drop = T, what = "ZM") #drop M level to be able to use--not sure why
     #plot just river data
     ggplot() +
@@ -91,9 +87,10 @@ tail(ca_df)
     coord_sf() 
     
 #plot locations
+    #per NOAA: Wildcat Road Bridge was selected as release site in 2018. see: https://www.noaa.gov/sites/default/files/legacy/document/2020/Oct/07354626189.pdf; no coordinates shared but searching via google wildcat road intersects north fork at 40.424415, -121.986960
     locs<-tibble(name = c("Delta Entry", "RBDD", "LSNFH", "Shasta Dam", "Keswick Dam", "Battle Creek", "Sacramento", "Caldwell Park"), 
-           lat = c(38.581107,40.146709, 40.716690, 40.718939, 40.612332, 40.367241,38.5816, 40.592527),
-           long = c(-121.508072,-122.154110,-122.415975,-122.418626,-122.445812, -122.169962,-121.4944, -122.391859),
+           lat = c(38.581107,40.146709, 40.716690, 40.718939, 40.612332, 40.424415,38.5816, 40.592527),
+           long = c(-121.508072,-122.154110,-122.415975,-122.418626,-122.445812, -121.986960,-121.4944, -122.391859),
            ref = c("reciever", "reciever", "hatchery", "dam", "dam", "hatchery", "city", "hatchery"))
     
 #to plot rivers over basemap
@@ -103,10 +100,11 @@ tail(ca_df)
                                            if_else(CAriver$gnis_name == "San Joaquin River","royalblue", "lightgrey")), alpha=.5) +
    #geom_sf( data = CArez, color= "darkgrey", alpha=.25) +
      # geom_sf( data = CAdelta, color= "darkgrey", alpha=.25) +
-   geom_point(aes(x = long, y = lat, labels=name), data = subset(locs,ref %in% c("reciever", "hatchery")),
- alpha = .5, color="darkred", size = 3)+
-  ggrepel::geom_label_repel(data=subset(locs,ref %in% c("reciever", "hatchery")), aes(x=long, y=lat, label =name), min.segment.length = 0)+
+#   geom_point(aes(x = long, y = lat, labels=name), data = subset(locs,ref %in% c("reciever", "hatchery")),
+ #alpha = .5, color="darkred", size = 3)+
+  #ggrepel::geom_label_repel(data=subset(locs,ref %in% c("reciever", "hatchery")), aes(x=long, y=lat, label =name), min.segment.length = 0)+
    annotate("text", x = -121.4944, y = 38.5816, label = "*")+
+    annotate("text", x =  -121.986960, y = 40.424415, label = "x", color="red")+
    # geom_segment(subset(locs,ref %in% c("dam")), aes(x=long, y=lat, color = name))+
    theme_bw() +
    ditch_the_axes+
@@ -115,6 +113,17 @@ tail(ca_df)
  #next add coordinated of spots and possibly just highlight sacramento river and add delta?
 
 summary(as.factor(CAriver$gnis_name))
+
+
+   #add rivers
+  ca_base_county + geom_sf(mapping = aes(group = group, x=long, y=lat), data = CAriver.crs) +
+  coord_sf()
+
+  
+   #zoom in
+    ca_base_county + coord_fixed(xlim = c(-124.5, -119.0),  ylim = c(37.5,42), ratio = 1.1)+ theme_bw() +
+    ditch_the_axes
+    
 ```
 
 

@@ -12,18 +12,48 @@ Packages
 - [leaflet & tmap bookdown](https://bookdown.org/robinlovelace/geocompr/adv-map.html#interactive-maps)
 - 
 ```{r}
-install.packages("rbokeh")
+
+
+
 library(leaflet)
 library(tmap)
 library(rbokeh)
 
 library(sf)
 library(tidyverse)
-library(tidygeocoder)#converts addresses to sf objects
+#library(tidygeocoder)#converts addresses to sf objects
+```
+
+Rnaturalearth
+```{r}
+library(sf)
+world <- ne_states( returnclass = "sf")
+rivers50 <- ne_download( scale = 10, type = 'rivers_lake_centerlines', category = 'physical',  returnclass = "sf") 
+
+ca_cropped <- st_crop(world, xmin = -100, xmax =-140,
+                        ymin = 20, ymax = 50) #cropping map
+r_cropped <- st_crop(rivers50, xmin = -110, xmax =-120,
+                        ymin = 38, ymax = 42) #cropping map
+
+
+us<-ne_states( country = "united states of america", returnclass = "sf")
+ca_cropped<- st_crop(world, xmin = 100, xmax = 110,
+                        ymin = 7, ymax = 24) #cropping map
+us
+ne_state
+
+ggplot() + geom_sf(data = ca_cropped) + theme_bw() + #south east asia
+  annotate(geom = "text", x = -100, y = 48, label = "South China Sea", #adding S' China sea  
+           fontface = "italic", color = "grey22", size = 4)  + 
+  geom_sf(data = r_cropped, col = 'blue')
+
 ```
 
 
 ```{r}
+# states, admin level1 boundaries
+
+
 #plot locations
     locs<-tibble(name = c("Delta Entry", "RBDD", "LSNFH", "Shasta Dam", "Keswick Dam", "Battle Creek", "Sacramento", "Caldwell Park"), 
            lat = c(38.581107,40.146709, 40.716690, 40.718939, 40.612332, 40.367241,38.5816, 40.592527),
