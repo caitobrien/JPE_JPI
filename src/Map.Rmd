@@ -11,7 +11,8 @@ library(maps)
 library(ggmap)
 library(mapdata)
 library(here)
-
+library(sf)
+library(tidyverse)
 
 #quick example
 map(col="grey80", border = "grey40", fill = TRUE,
@@ -41,7 +42,7 @@ dim(states)
   coord_fixed(1.3) +
   guides(fill=FALSE)  # do this to leave off the color legend
 #subset CA
-ca_df <- subset(states, region == "california")
+ca_df <- subset(states, region == c("california", "oregon", "nevada"))
 
 head(ca_df)
 tail(ca_df)
@@ -58,8 +59,6 @@ tail(ca_df)
   ca_base_county<-ca_base + #theme_nothing() + #drops coordinates and grid
   geom_polygon(data = ca_county, fill = NA, color = "white") +
   geom_polygon(color = "black", fill = NA)  # get the state border back on top
-
-
 
 #read in river data
     CAwater<-st_read(dsn = here("data","NHD_Major_Rivers"))
@@ -79,35 +78,51 @@ tail(ca_df)
     geom_sf( data = CArez) +
     coord_sf()
 #delta
-    CAdelta<-st_read(dsn = here("Delta"))
+    CAdelta<-st_read(dsn = here("data","Delta"))
     #CArez<-st_zm(CArez, drop = T, what = "ZM") #drop M level to be able to use--not sure why
     #plot just river data
     ggplot() +
     geom_sf( data = CAdelta) +
     coord_sf() 
+#rivers and creeks
+    CArc<-st_read(dsn = here("data", "NHD_Major_Rivers_and_Creeks"))
+      CArc<-st_zm(CArc, drop = T, what = "ZM") #drop M level to be able to use--not sure why
+      CArc<-CArc %>% 
+        filter(gnis_name %in% c( "North Fork Battle Creek", "Battle Creek", "South Fork Battle Creek"))
     
+      CArc %>% 
+        filter(gnis_name %in% c("Sacramento River", "San Joaquin River", "North Fork Battle Creek", "Battle Creek", "South Fork Battle Creek")) %>% 
+      ggplot() +
+    geom_sf( ) +
+         annotate("text", x =  -121.986960, y = 40.424415, label = "x", color="red")+
+    coord_sf()     
 #plot locations
     #per NOAA: Wildcat Road Bridge was selected as release site in 2018. see: https://www.noaa.gov/sites/default/files/legacy/document/2020/Oct/07354626189.pdf; no coordinates shared but searching via google wildcat road intersects north fork at 40.424415, -121.986960
     locs<-tibble(name = c("Delta Entry", "RBDD", "LSNFH", "Shasta Dam", "Keswick Dam", "Battle Creek", "Sacramento", "Caldwell Park"), 
            lat = c(38.581107,40.146709, 40.716690, 40.718939, 40.612332, 40.424415,38.5816, 40.592527),
            long = c(-121.508072,-122.154110,-122.415975,-122.418626,-122.445812, -121.986960,-121.4944, -122.391859),
-           ref = c("reciever", "reciever", "hatchery", "dam", "dam", "hatchery", "city", "hatchery"))
+           ref = c("reciever", "reciever", "hatchery", "dam", "dam", "release", "city", "release"))
     
 #to plot rivers over basemap
- ggplot()+
+p<- ggplot()+
    geom_polygon(data=ca_df, mapping = aes(x = long, y = lat, group = group), color = "black", fill = "transparent")+
    geom_sf( data = CAriver, color= if_else(CAriver$gnis_name == "Sacramento River", "royalblue",
-                                           if_else(CAriver$gnis_name == "San Joaquin River","royalblue", "lightgrey")), alpha=.5) +
+                                           if_else(CAriver$gnis_name == "San Joaquin River","royalblue", "transparent")), alpha=.5) +
+   geom_sf( data = CArc, color= "royalblue", alpha=.5) +
    #geom_sf( data = CArez, color= "darkgrey", alpha=.25) +
      # geom_sf( data = CAdelta, color= "darkgrey", alpha=.25) +
-#   geom_point(aes(x = long, y = lat, labels=name), data = subset(locs,ref %in% c("reciever", "hatchery")),
- #alpha = .5, color="darkred", size = 3)+
-  #ggrepel::geom_label_repel(data=subset(locs,ref %in% c("reciever", "hatchery")), aes(x=long, y=lat, label =name), min.segment.length = 0)+
-   annotate("text", x = -121.4944, y = 38.5816, label = "*")+
-    annotate("text", x =  -121.986960, y = 40.424415, label = "x", color="red")+
+    geom_point(aes(x = long, y = lat, labels=name), data = subset(locs,ref %in% c("reciever")),
+    alpha = .5, color="darkred", size = 3)+
+    geom_point(aes(x = long, y = lat, labels=name), data = subset(locs,ref %in% c("dam")),
+    alpha = .5, color="black", size = 3, shape = 95)+
+    geom_point(aes(x = long, y = lat, labels=name), data = subset(locs,ref %in% c("release")),
+    alpha = .5, fill="goldenrod", size = 2, shape = 25)+
+ # ggrepel::geom_label_repel(data=subset(locs,ref %in% c("reciever", "hatchery")), aes(x=long, y=lat, label =name), min.segment.length = 0)+
+   #annotate("text", x = -121.4944, y = 38.5816, label = "* Sacramento")+
+   
    # geom_segment(subset(locs,ref %in% c("dam")), aes(x=long, y=lat, color = name))+
-   theme_bw() +
-   ditch_the_axes+
+   theme_nothing() +
+   #ditch_the_axes+
   coord_sf(xlim = c(-124.5, -119.0),  ylim = c(37.5,42))
 
  #next add coordinated of spots and possibly just highlight sacramento river and add delta?
@@ -126,7 +141,42 @@ summary(as.factor(CAriver$gnis_name))
     
 ```
 
+TMap
+```{r}
+library(tmap)
+data("World")
+r<-data("rivers")
 
+US<- World %>% 
+  filter(iso_a3 == "USA") %>% 
+  tigris::shift_geometry()
+US.riv<- rivers %>% 
+  filter
+
+
+tm_shape(US) +
+    tm_polygons("HPI") +
+  tm_shape(rivers)+
+  tm_lines(col = "blue")
+  
+
+```
+
+```{r}
+hydro<-st_read(here("data", "hybas_na_lev01-12_v1c", "hybas_na_lev01_v1c.shp"))
+
+united<- ne_states(country = "United States of America", returnclass = "sf")
+ggplot() + geom_sf(data=united)
+united_box <- st_bbox(united)
+united_box
+#      xmin       ymin       xmax       ymax 
+#-179.14350   18.90612  179.78094   71.41250  
+?st_bbox()
+box = c(xmin = -179.14350, ymin = 18.90612, xmax = 179.78094, ymax = 71.41250)
+united <- st_crop(united, united_box)
+
+plot(st_crop(united, st_bbox(box)))
+```
 
 
 ---- fails
