@@ -9,30 +9,25 @@ This markdown is focused on designating run assignment using Length-at-date (LAD
 
 Data sources:
 
-- CBR shared file: lengthcriteriariver.csv
-- USFWS shared file: RunDesignation.csv
+- CBR shared file: lengthcriteriariver.csv renamed run_designation_cbr.csv 
+- USFWS shared file: RunDesignation.csv renamed run_designation_fws.csv
 - EDI Data portal - RBDD : https://portal.edirepository.org/nis/mapbrowse?scope=edi&identifier=1365&revision=1
 - SacPas LAD figures: https://www.cbr.washington.edu/sacramento/data/delta_salvage.html
 
-Naming on SacPas LAD figures:
-
-- Spring
-- Fall
-- Late-Fall
-- Winter
 
 Run designation naming: 
+
 - lengthcriteriariver.csv:  "WL"    "WE"    "LFL"   "LFE"   "FL"    "FE"    "SL"    "SE"    "WL.1"  "WE.1"  "LFL.1" "LFE.1" "FL.1"  "FE.1"  "SL.1"  "SE.1" 
 
 - RunDesignation.csv: "F", "L", "W", "S"
 
 - catch.csv: "fall run", "late fall run", "spring run", "winter run", "not reported"
 
+- renamed runs to: "fall", "late_fall", "spring", "winter"
+
 To do: 
 
-- get naming designations from SI
-
-- current function assigns response base on presence/absence of date and length. Catch.csv data has run designation for catch_id's with length data. Find methods (likely in macros) to determine how this is designated. 
+- current function assigns response base on presence/absence of date and length. Catch.csv data has run designation for catch_id's with length data but no date. Find methods (likely in macros) to determine how this is designated. 
 
 - Double check method is matching run assingment in catch.csv
 
@@ -46,15 +41,15 @@ Bill Poytress information via email exchange:
       "Upon further investigation I found two things regarding run assignment.  A) the rbdd.catch.csv files we have uploaded to EDI include a run designation for all measured fish in the column "run".  B) Fish are designated a runID of "n/p" for all other species and for chinook plus counts that need run assignment through the "Wild_Totals"  macro currently in access that takes the plus count from any given trap and applies the ratio of spring, winter, fall or late-fall fish from the measured fish within a specific sample and applies that value to the plus count fish and then sums them by run.  C) Not sure how the LengthCriteriaRiver.csv file from DWR handles the overlap of foklengths from the original Frank Fisher/Sheila Greene table, but it could be handled differently than the table we use (stored in access) as RunDesignation.  Technically, we followed Johnson et al. 1992 which indicates the value of the forklength overlap should correspond to the later spawning group.    See the table in the access file to confirm, or see the attached, exported copy of the table we use for runID."
 
 
-```{r load_libraries}
+```{r load_libraries, warning=FALSE, message=FALSE}
 library(tidyverse)
 library(here)
 ```
 
 ```{r load_data}
 ## load LAD designations from CBR and USFWS
-lad_cbr <- read.csv(here::here("JPI_convert_to_Rcode/data","lengthcriteriariver.csv"))
-lad_usfws_raw <- read.csv(here::here("JPI_convert_to_Rcode/data","RunDesignation.csv"))
+lad_cbr <- read.csv(here::here("JPI_convert_to_Rcode/data","run_designation_cbr.csv"))
+lad_usfws_raw <- read.csv(here::here("JPI_convert_to_Rcode/data","run_designation_fws.csv"))
 lad_fws <- lad_usfws_raw %>% select(2:7)
 
 ## load catch.csv from EDI Data portal
@@ -67,7 +62,7 @@ df_catch_raw <- read.csv(url)
 
 
 ```{r wrangle_data}
-#wragle fws to match cbr format
+#wrangle fws to match cbr format
 lad_fws<-lad_fws %>% 
  tidyr::separate(LookupDate, into = c("mm", "dd"), sep = "/") %>% 
   mutate(mm = as.numeric(mm),
@@ -175,19 +170,68 @@ df_catch_designation_cbr <- fct_LAD_designation(lad_data = lad_cbr_long, catch_d
 ```
 
 
+
+Comparing data it seems the designation in april for late fall is the main discrepancy between fws and cbr, catch and fws designate late_fall and cbr returns no run designation. Look into april min/max. Outside of those, a few discrepancies with  2/4 fall x spring(cbr) (8), 2/16/14 winter x spring (cbr) (1), 2/11 spring x winter,spring(cbr) (4) Other designation is that
 ```{r compare_LAD_designation}
 # Join the data frames
-df_join <- df_catch_designation.fws %>%
-  select(mm, dd, fork_length, run, run_designation_fws = run_designation) %>%
- cbind(run_designation_cbr = df_catch_designation.cbr$run_designation)
+df_join <- df_catch_designation_fws %>%
+  select(start_date, mm, dd, fork_length, run, run_designation_fws = run_designation) %>%
+ cbind(run_designation_cbr = df_catch_designation_cbr$run_designation) %>% 
+    mutate(year = year(start_date),
+         doy = yday(start_date)) 
+
+#for plot
+df_join_long <- df_join %>% 
+  pivot_longer(cols = c(5:7),
+               names_to = "dataset",
+               values_to = "run")
 
 # Filter the rows where run, run_designation_fws and run_designation_cbr are not the same
 df_different_runs <- df_join %>%
-  filter(run != run_designation_fws | run != run_designation_cbr | run_designation_fws != run_designation_cbr)
+  filter(run != run_designation_fws | run != run_designation_cbr | run_designation_fws != run_designation_cbr) %>% 
+  filter(!is.na(fork_length))
 
 # Filter the rows where run_designation_fws and run_designation_cbr are not the same
 df_different_runs_cbr.fws <- df_join %>%
-  filter( run_designation_fws != run_designation_cbr)
+  filter( run_designation_fws != run_designation_cbr) %>% 
+    filter(!is.na(fork_length))
+
+```
+
+```{r plot_designations, fig.width=12}
+
+lad <- bind_rows(
+  lad_fws %>% mutate(dataset = "fws"),
+  lad_cbr_long %>% mutate(dataset = "cbr")
+)
+
+lad_plot<-lad %>% 
+  pivot_longer(cols = c(4:7),
+               names_to = "threshold",
+               values_to = "length") %>% 
+    mutate(date = make_date(year = 2012, month = mm, day = dd),  # set a year
+         doy= yday(date)) %>%   # Extract the day of the year
+  filter(threshold %in% c("MinLength1")) # "MinLength2" 
+
+#cbr and fws - min1- differ, min 1 & min 2 = full overlap
+ggplot(lad_plot, aes(x = doy, y= length) ) +
+  geom_point( aes(color = interaction(RunDesignation,dataset), shape = dataset)) +
+  scale_shape_manual(values = c(0,16)) 
+
+
+lad_fws %>% 
+  pivot_longer(cols = c(4:7),
+               names_to = "threshold",
+               values_to = "length") %>% 
+    mutate(date = make_date(year = 2012, month = mm, day = dd),  # Create a date for a generic year
+         doy= yday(date)) %>%   # Extract the day of the year
+  filter(threshold == "MinLength1") %>% # filter(threshold %in% c("MinLength1", "MaxLength1" )) %>% 
+
+ggplot(aes(x = doy, y= length, group = interaction(RunDesignation,threshold))) +
+  geom_point(aes(color = RunDesignation)) 
+
+```
+
 
 ```
 
