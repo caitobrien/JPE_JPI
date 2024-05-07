@@ -118,6 +118,76 @@ rm(lad_usfws_raw)
 ```
 
 
+Compare lad tables
+Note: min/max1 seems to be switched for minmax2 for some of cbr matrix. Code at the bottom of this chunks rearranged to match lad_fws organization. Leaves data with 98 rows of mm/dd/run that differ between the two tables. 
+```{r compare_LAD_designation_tables}
+
+lad_fws <- lad_fws %>%
+  mutate(mm = as.integer(mm),
+         dd = as.integer(dd),
+         dataset = "fws")
+
+lad_cbr_long <- lad_cbr_long %>%
+   mutate(dataset = "cbr")
+
+# # Compare the data frames
+# diff_rows <- lad_cbr_long %>%
+#   mutate(dataset = "cbr") %>% 
+#   anti_join(lad_fws, by = c("mm", "dd", "RunDesignation", "MinLength1", "MaxLength1", "MinLength2", "MaxLength2"))
+# 
+
+# Combine the data frames
+combined_df <- bind_rows(lad_fws, lad_cbr_long)
+
+# Find the rows that only appear in one data frame
+diff_rows <- combined_df %>%
+  group_by(mm, dd, RunDesignation, MinLength1, MaxLength1, MinLength2, MaxLength2) %>%
+  filter(n() == 1)
+
+same_rows <- combined_df %>%
+  group_by(mm, dd, RunDesignation, MinLength1, MaxLength1, MinLength2, MaxLength2) %>%
+  filter(n() > 1)
+
+#seems that the maxmin are just mirrored in a lot of diff_rows---resort to match up
+#rename columns to resort
+diff_rows_recode <- diff_rows %>% 
+  filter(dataset == "cbr") %>% 
+  rename(MinLength1 = "MinLength2",
+         MaxLength1 = "MaxLength2",
+         MinLength2 = "MinLength1",
+         MaxLength2 = "MaxLength1")
+#join cbr resorted back to fws 
+diff_reorg<-diff_rows %>% 
+  filter(dataset == "fws") %>% 
+  bind_rows(diff_rows_recode)
+
+#pull remaining rows that don't match -- much better 
+diff_rows_reorg <- diff_reorg %>%
+  group_by(mm, dd, RunDesignation, MinLength1, MaxLength1, MinLength2, MaxLength2) %>%
+  filter(n() == 1)
+
+
+## add reorg back to main cbr designation table to use/redo catch run designation to compare
+# Remove the rows from lad_cbr_long that are in diff_rows_recode
+updated_lad_cbr_long <- lad_cbr_long %>%
+  anti_join(diff_rows_recode, by = c("mm", "dd", "RunDesignation"))
+
+# Add the rows from diff_rows_recode
+lad_cbr_updated<- bind_rows(updated_lad_cbr_long, diff_rows_recode)
+
+###check by joining with fws again
+
+# Combine the data frames
+combined_df <- bind_rows(lad_fws, lad_cbr_updated)
+
+# Find the rows that only appear in one data frame -- matched 98 that do not match from code above
+diff_rows <- combined_df %>%
+  group_by(mm, dd, RunDesignation, MinLength1, MaxLength1, MinLength2, MaxLength2) %>%
+  filter(n() == 1)
+
+```
+
+Function to assign run designation based on lad table 
 ```{r fct_LAD_designation}
 # Function to assign run designation based on LAD data
 #lad_data should be formatted with mm dd as numeric columns
@@ -160,19 +230,19 @@ fct_LAD_designation <- function(lad_data, catch_data){
 
 #check designations
 df_catch_designation_fws <- fct_LAD_designation(lad_data = lad_fws, catch_data = df_catch)
-df_catch_designation_cbr <- fct_LAD_designation(lad_data = lad_cbr_long, catch_data = df_catch)
+df_catch_designation_cbr <- fct_LAD_designation(lad_data = lad_cbr_updated, catch_data = df_catch)
 
 #save data
  # save(df_catch_designation_fws, file =here::here("JPI_convert_to_Rcode/data","catch_run_designation_fws.rda"), compress = "xz")
   
- # save(df_catch_designation_cbr, file =here::here("JPI_convert_to_Rcode/data","catch_run_designation_cbr.rda"), compress = "xz")
+# save(df_catch_designation_cbr, file =here::here("JPI_convert_to_Rcode/data","catch_run_designation_cbr.rda"), compress = "xz")
 
 ```
 
 
 
-Comparing data it seems the designation in april for late fall is the main discrepancy between fws and cbr, catch and fws designate late_fall and cbr returns no run designation. Look into april min/max. Outside of those, a few discrepancies with  2/4 fall x spring(cbr) (8), 2/16/14 winter x spring (cbr) (1), 2/11 spring x winter,spring(cbr) (4) Other designation is that
-```{r compare_LAD_designation}
+Comparing data it seems the designation in april for late fall is the main discrepancy between fws and cbr, catch and fws designate late_fall and cbr returns no run designation. Look into april min/max. Outside of those, a few discrepancies with  2/4 fall x spring(cbr) (8), 2/16/14 winter x spring (cbr) (1), 2/11 spring x winter,spring(cbr) (4)
+```{r compare_LAD_designation_catch_data}
 # Join the data frames
 df_join <- df_catch_designation_fws %>%
   select(start_date, mm, dd, fork_length, run, run_designation_fws = run_designation) %>%
@@ -195,14 +265,18 @@ df_different_runs <- df_join %>%
 df_different_runs_cbr.fws <- df_join %>%
   filter( run_designation_fws != run_designation_cbr) %>% 
     filter(!is.na(fork_length))
-
 ```
+
+
+
+
+
 
 ```{r plot_designations, fig.width=12}
 
 lad <- bind_rows(
   lad_fws %>% mutate(dataset = "fws"),
-  lad_cbr_long %>% mutate(dataset = "cbr")
+  lad_cbr_updated %>% mutate(dataset = "cbr")
 )
 
 lad_plot<-lad %>% 
@@ -213,22 +287,33 @@ lad_plot<-lad %>%
          doy= yday(date)) %>%   # Extract the day of the year
   filter(threshold %in% c("MinLength1")) # "MinLength2" 
 
-#cbr and fws - min1- differ, min 1 & min 2 = full overlap
+#cbr and fws - min1
 ggplot(lad_plot, aes(x = doy, y= length) ) +
   geom_point( aes(color = interaction(RunDesignation,dataset), shape = dataset)) +
   scale_shape_manual(values = c(0,16)) 
 
-
-lad_fws %>% 
-  pivot_longer(cols = c(4:7),
+# cbr and fws different 
+diff_rows %>% 
+    pivot_longer(cols = c(4:7),
                names_to = "threshold",
                values_to = "length") %>% 
-    mutate(date = make_date(year = 2012, month = mm, day = dd),  # Create a date for a generic year
+      mutate(date = make_date(year = 2012, month = mm, day = dd),  # set a year
          doy= yday(date)) %>%   # Extract the day of the year
-  filter(threshold == "MinLength1") %>% # filter(threshold %in% c("MinLength1", "MaxLength1" )) %>% 
+ggplot(aes(x = doy, y= length) ) +
+  geom_point( aes(color = RunDesignation))+
+  facet_grid(~dataset)
 
-ggplot(aes(x = doy, y= length, group = interaction(RunDesignation,threshold))) +
-  geom_point(aes(color = RunDesignation)) 
+
+diff_rows %>%
+  pivot_longer(cols = c(4:7),
+               names_to = "threshold",
+               values_to = "length") %>%
+  mutate(date = make_date(year = 2012, month = mm, day = dd),  # set a year
+         doy = yday(date),  # Extract the day of the year
+         mm_dd = paste(mm, dd, sep = "/")) %>%   # Create mm/dd variable
+  ggplot(aes(x = doy, y = length)) +
+  geom_text(aes(label = mm_dd, color = RunDesignation)) +
+  facet_grid(~dataset)
 
 ```
 
