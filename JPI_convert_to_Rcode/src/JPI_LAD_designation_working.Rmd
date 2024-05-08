@@ -4,42 +4,40 @@ output: html_document
 date: "2024-05-06"
 ---
 
-Objective:
-This markdown is focused on designating run assignment using Length-at-date (LAD) for juveniles passing Red Bluff Diversion Dam (RBDD) via R script. Both CBR and USFWS have shared Length-at-date run designation data. USFWS currently assigns run designation using a macro in Excel & Access but would like to automate via R. 
+Objective: This markdown is focused on designating run assignment using Length-at-date (LAD) for juveniles passing Red Bluff Diversion Dam (RBDD) via R script. Both CBR and USFWS have shared Length-at-date run designation tables. USFWS currently assigns run designation using a macro in Access but would like to automate via R. To confirm run designation methods, this markdown uses the CBR and USFWS LAD tables to assign run designation to catch data from the EDI Data portal and then compare to the `run` column within the catch data.
 
 Data sources:
 
-- CBR shared file: lengthcriteriariver.csv renamed run_designation_cbr.csv 
-- USFWS shared file: RunDesignation.csv renamed run_designation_fws.csv
-- EDI Data portal - RBDD : https://portal.edirepository.org/nis/mapbrowse?scope=edi&identifier=1365&revision=1
-- SacPas LAD figures: https://www.cbr.washington.edu/sacramento/data/delta_salvage.html
+-   CBR shared file: lengthcriteriariver.csv renamed run_designation_cbr.csv
+-   USFWS shared file: RunDesignation.csv renamed run_designation_fws.csv
+-   EDI Data portal - RBDD : <https://portal.edirepository.org/nis/mapbrowse?scope=edi&identifier=1365&revision=1>
+-   SacPas LAD figures: <https://www.cbr.washington.edu/sacramento/data/delta_salvage.html>
 
+Run designation naming:
 
-Run designation naming: 
+-   lengthcriteriariver.csv: "WL" "WE" "LFL" "LFE" "FL" "FE" "SL" "SE" "WL.1" "WE.1" "LFL.1" "LFE.1" "FL.1" "FE.1" "SL.1" "SE.1"
 
-- lengthcriteriariver.csv:  "WL"    "WE"    "LFL"   "LFE"   "FL"    "FE"    "SL"    "SE"    "WL.1"  "WE.1"  "LFL.1" "LFE.1" "FL.1"  "FE.1"  "SL.1"  "SE.1" 
+-   RunDesignation.csv: "F", "L", "W", "S"
 
-- RunDesignation.csv: "F", "L", "W", "S"
+-   catch.csv: "fall run", "late fall run", "spring run", "winter run", "not reported"
 
-- catch.csv: "fall run", "late fall run", "spring run", "winter run", "not reported"
+-   renamed runs to: "fall", "late_fall", "spring", "winter"; also included "no length", "no date", "no length or date", "no run designated"
 
-- renamed runs to: "fall", "late_fall", "spring", "winter"
+To do:
 
-To do: 
+-   current function assigns run base on presence/absence of date and length. Catch.csv data has run designation for catch_id's with length data but no date. Find methods (likely in macros, possibly genetic or date based) to determine how this is designated.
 
-- current function assigns response base on presence/absence of date and length. Catch.csv data has run designation for catch_id's with length data but no date. Find methods (likely in macros) to determine how this is designated. 
+-   Double check method is matching run assignment in catch.csv
 
-- Double check method is matching run assingment in catch.csv
+-   Compare CBR method to USFWS method
 
-- Compare CBR method to USFWS method
+Bill Poytress information via email exchange:
 
+```         
+  "Thanks Jen for the update.  And yes LAD assignment is a macro we run within Access, so hard coding it in R would be a lot better for the process.  The one thing to keep in mind, is that we do after the fact genetic corrections in some cases for spring and winter run in the fall period each year.  I wonder if we should actually assign race and then export the csv's to EDI?  Let me know your thoughts on that situation.  Thanks for the update and progress!!"
 
-Bill Poytress information via email exchange: 
-
-      "Thanks Jen for the update.  And yes LAD assignment is a macro we run within Access, so hard coding it in R would be a lot better for the process.  The one thing to keep in mind, is that we do after the fact genetic corrections in some cases for spring and winter run in the fall period each year.  I wonder if we should actually assign race and then export the csv's to EDI?  Let me know your thoughts on that situation.  Thanks for the update and progress!!"
-
-      "Upon further investigation I found two things regarding run assignment.  A) the rbdd.catch.csv files we have uploaded to EDI include a run designation for all measured fish in the column "run".  B) Fish are designated a runID of "n/p" for all other species and for chinook plus counts that need run assignment through the "Wild_Totals"  macro currently in access that takes the plus count from any given trap and applies the ratio of spring, winter, fall or late-fall fish from the measured fish within a specific sample and applies that value to the plus count fish and then sums them by run.  C) Not sure how the LengthCriteriaRiver.csv file from DWR handles the overlap of foklengths from the original Frank Fisher/Sheila Greene table, but it could be handled differently than the table we use (stored in access) as RunDesignation.  Technically, we followed Johnson et al. 1992 which indicates the value of the forklength overlap should correspond to the later spawning group.    See the table in the access file to confirm, or see the attached, exported copy of the table we use for runID."
-
+  "Upon further investigation I found two things regarding run assignment.  A) the rbdd.catch.csv files we have uploaded to EDI include a run designation for all measured fish in the column "run".  B) Fish are designated a runID of "n/p" for all other species and for chinook plus counts that need run assignment through the "Wild_Totals"  macro currently in access that takes the plus count from any given trap and applies the ratio of spring, winter, fall or late-fall fish from the measured fish within a specific sample and applies that value to the plus count fish and then sums them by run.  C) Not sure how the LengthCriteriaRiver.csv file from DWR handles the overlap of foklengths from the original Frank Fisher/Sheila Greene table, but it could be handled differently than the table we use (stored in access) as RunDesignation.  Technically, we followed Johnson et al. 1992 which indicates the value of the forklength overlap should correspond to the later spawning group.    See the table in the access file to confirm, or see the attached, exported copy of the table we use for runID."
+```
 
 ```{r load_libraries, warning=FALSE, message=FALSE}
 library(tidyverse)
@@ -59,7 +57,6 @@ url <- "https://portal.edirepository.org/nis/dataviewer?packageid=edi.1365.1&ent
 # Download and read the CSV file into a data frame
 df_catch_raw <- read.csv(url)
 ```
-
 
 ```{r wrangle_data}
 #wrangle fws to match cbr format
@@ -117,9 +114,8 @@ rm(lad_cbr)
 rm(lad_usfws_raw)
 ```
 
+Compare lad tables Note: min/max1 seems to be switched for minmax2 for some of cbr matrix. Code at the bottom of this chunk rearranges to match lad_fws organization. Based on this change, only 98 rows of mm/dd/run differ between the two tables.
 
-Compare lad tables
-Note: min/max1 seems to be switched for minmax2 for some of cbr matrix. Code at the bottom of this chunks rearranged to match lad_fws organization. Leaves data with 98 rows of mm/dd/run that differ between the two tables. 
 ```{r compare_LAD_designation_tables}
 
 lad_fws <- lad_fws %>%
@@ -139,24 +135,25 @@ lad_cbr_long <- lad_cbr_long %>%
 # Combine the data frames
 combined_df <- bind_rows(lad_fws, lad_cbr_long)
 
-# Find the rows that only appear in one data frame
+# Find the rows that differ
 diff_rows <- combined_df %>%
   group_by(mm, dd, RunDesignation, MinLength1, MaxLength1, MinLength2, MaxLength2) %>%
   filter(n() == 1)
 
+# Find the rows that are the same
 same_rows <- combined_df %>%
   group_by(mm, dd, RunDesignation, MinLength1, MaxLength1, MinLength2, MaxLength2) %>%
   filter(n() > 1)
 
-#seems that the maxmin are just mirrored in a lot of diff_rows---resort to match up
-#rename columns to resort
+#seems that the maxmin are just mirrored in a lot of diff_rows---re-sort to match min/max 1 and 2
+#rename columns to re-sort
 diff_rows_recode <- diff_rows %>% 
   filter(dataset == "cbr") %>% 
   rename(MinLength1 = "MinLength2",
          MaxLength1 = "MaxLength2",
          MinLength2 = "MinLength1",
          MaxLength2 = "MaxLength1")
-#join cbr resorted back to fws 
+#join cbr re-sorted back to fws 
 diff_reorg<-diff_rows %>% 
   filter(dataset == "fws") %>% 
   bind_rows(diff_rows_recode)
@@ -168,7 +165,7 @@ diff_rows_reorg <- diff_reorg %>%
 
 
 ## add reorg back to main cbr designation table to use/redo catch run designation to compare
-# Remove the rows from lad_cbr_long that are in diff_rows_recode
+# Remove rows from lad_cbr_long that are in diff_rows_recode
 updated_lad_cbr_long <- lad_cbr_long %>%
   anti_join(diff_rows_recode, by = c("mm", "dd", "RunDesignation"))
 
@@ -187,7 +184,8 @@ diff_rows <- combined_df %>%
 
 ```
 
-Function to assign run designation based on lad table 
+Function to assign run designation based on lad table
+
 ```{r fct_LAD_designation}
 # Function to assign run designation based on LAD data
 #lad_data should be formatted with mm dd as numeric columns
@@ -239,9 +237,8 @@ df_catch_designation_cbr <- fct_LAD_designation(lad_data = lad_cbr_updated, catc
 
 ```
 
+Comparing data it seems the designation in April for late-fall is the main discrepancy between fws and cbr: catch and fws designate late_fall and cbr returns no run designation. Look into April min/max. Outside of those, a few discrepancies with 2/4 fall x spring(cbr) (8), 2/16/14 winter x spring (cbr) (1), 2/11 spring x winter,spring(cbr) (4)
 
-
-Comparing data it seems the designation in april for late fall is the main discrepancy between fws and cbr, catch and fws designate late_fall and cbr returns no run designation. Look into april min/max. Outside of those, a few discrepancies with  2/4 fall x spring(cbr) (8), 2/16/14 winter x spring (cbr) (1), 2/11 spring x winter,spring(cbr) (4)
 ```{r compare_LAD_designation_catch_data}
 # Join the data frames
 df_join <- df_catch_designation_fws %>%
@@ -266,11 +263,6 @@ df_different_runs_cbr.fws <- df_join %>%
   filter( run_designation_fws != run_designation_cbr) %>% 
     filter(!is.na(fork_length))
 ```
-
-
-
-
-
 
 ```{r plot_designations, fig.width=12}
 
@@ -317,6 +309,19 @@ diff_rows %>%
 
 ```
 
+Remaining questions:
 
-```
+- How is access assigning run designation -- named race designation in some tables?
 
+- RunDesignation table in database_dev is linked to database_be. How is this table being used in the database? 
+
+- Macro `Wild_Totals` is only in database_dev and seems to be based off of Wild Plus Count Proportioned and then generates B-Chinook Proportions by trap table. B-Chinook Proportions by trap is also linked to database_be. But no idea how it's used in the relationship diagram. Likely through recapture length to sample to catch data?
+
+
+Relational diagram:
+
+![Access Relationship Diagram](images/Screenshot 2024-05-08 092501.png)
+
+![Macro \`Wild_Totals\`](images/Screenshot 2024-05-08 093058.png)
+
+![B_chinook_proportions_by trap](images/Screenshot 2024-05-08 092902.png)
