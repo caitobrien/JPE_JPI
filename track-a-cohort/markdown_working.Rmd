@@ -1,0 +1,31 @@
+---
+title: "track_a_cohort_figures_working"
+output: html_document
+date: "2024-05-09"
+---
+
+
+Objective: Using shared resources via [BDO github](https://github.com/BDO-Science/track-a-cohort) from BOR, include more interactive capabilities to certain graphs in form of Rmarkdown and/or shinyapp
+
+Figure from [Track a cohort_WR_plots.docx](https://github.com/BDO-Science/track-a-cohort/blob/main/Track%20a%20Cohort_WR_plots.docx) to include in shiny app:
+
+- Figure 2. STARs survival
+
+- Figure 3-- (2) annual cumulative loss by period and water year type) 
+
+- Figure 5. Cumalitive loss -- Current and Historical
+
+```{r load_libraries}
+here
+
+```
+
+
+
+# Figure 2
+
+- pulls data from STARs, work with Nick to get files needed to plot
+```{r}
+
+```
+

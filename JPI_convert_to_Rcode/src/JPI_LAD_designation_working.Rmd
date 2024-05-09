@@ -4,7 +4,7 @@ output: html_document
 date: "2024-05-06"
 ---
 
-Objective: This markdown is focused on designating run assignment using Length-at-date (LAD) for juveniles passing Red Bluff Diversion Dam (RBDD) via R script. Both CBR and USFWS have shared Length-at-date run designation tables. USFWS currently assigns run designation using a macro in Access but would like to automate via R. To confirm run designation methods, this markdown uses the CBR and USFWS LAD tables to assign run designation to catch data from the EDI Data portal and then compare to the `run` column within the catch data.
+Objective: This markdown is focused on designating run assignment using Length-at-date (LAD) for juveniles passing Red Bluff Diversion Dam (RBDD) via R script. Both CBR and USFWS have shared Length-at-date run designation tables. USFWS currently assigns run designation using a macro in Access but would like to automate via R. To confirm run designation methods, this markdown uses the CBR and USFWS LAD tables to assign run designation to catch data from the EDI Data portal and then compare to the `run` column within catch.csv.
 
 Data sources:
 
