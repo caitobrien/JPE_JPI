@@ -13,11 +13,13 @@ Figure from [Track a cohort_WR_plots.docx](https://github.com/BDO-Science/track-
 
 - Figure 3-- (2) annual cumulative loss by period and water year type) 
 
-- Figure 5. Cumalitive loss -- Current and Historical
+- Figure 5. Cumulative loss -- Current and Historical
 
 ```{r load_libraries}
-here
-
+library(here) #to designate file pathways
+library(tidyverse) #data manipulation, includes pkgs such as lubridate and ggplot
+library(gghighlight) #for stars plot- highlight certain years
+library(plotly) #for interactive plots
 ```
 
 
@@ -26,6 +28,176 @@ here
 
 - pulls data from STARs, work with Nick to get files needed to plot
 ```{r}
+#these steps will adjust with NB's help sourcing all years of data to plot figure
+
+#load files--each represents a year of data sourced fom STARS shiny app
+files <- list.files(path = here::here('track-a-cohort/shared files/STARS/'))
+
+#convert calendar year to water year via function shared in .rda file--changed to use lubridate
+# waterDay <- function(x, start.month = 10L){
+#   start.yr = as.integer(format(as.POSIXlt(x), format="%Y")) - 
+#     (format(as.POSIXlt(x), format="%m") < start.month)
+#   start.date = as.Date(format(ISOdate(
+#     year=start.yr, month=start.month, day=1L), format="%Y-%m-%d"))
+#   as.integer(x - start.date + 1L)
+# }
+
+waterDay <- function(x, start.month = 10L){
+  start.yr <- year(x) - (month(x) < start.month)
+  start.date <- as.Date(paste0(start.yr, "-", start.month, "-01"))
+  as.integer(x - start.date + 1L)
+}
+
+#read in files, bind rows, select columns, arrange by date, convert to water year
+stars <- read_csv(here::here(paste0('track-a-cohort/shared files/STARS/',files))) %>% bind_rows() %>%
+  select(1, surv = 2, survL80 = 3, survU80 = 4, idsurv = 17, idsurvL80 = 18, idsurvU80 = 19, idRoute = 32, idRouteL80 = 33, idRouteU80 = 34) %>% arrange(Date) %>%
+  mutate(WY = year(Date) + (month(Date) >= 10)) %>% 
+  mutate(wDay = waterDay(Date),
+         doy = yday(Date), #added doy/CY for possible shiny app function 
+         CY = year(Date),
+         wDate = as.Date(paste0(WY, '-', wDay), format = '%Y-%j'))
+
+#shared plot 
+
+##used a subsample of dataset 
+stars2 <- stars %>% select(12,Group = 11,2:10)
+
+
+stars_graph_surv <- ggplot(stars, mapping = aes(x = wDay)) + 
+  # geom_line(stars2, mapping = aes(y = surv, group = Group), color = 'grey', linewidth = .5) + 
+    geom_line(stars, mapping = aes(y = surv), color = 'steelblue2', linewidth = 1) +
+  # geom_ribbon(stars, mapping = aes(ymin = survL80, ymax = survU80), fill = 'steelblue2', alpha = 0.5) + 
+  facet_grid(WY~.) +
+  labs(x = 'Date', y = 'Probability', title = 'STARS Total Survival') +
+  scale_x_continuous(breaks = c(1,62,124,183,244), labels = c('Oct', 'Dec', 'Feb', 'Apr', 'Jun'), limits = c(0,272)) +
+  theme(legend.position = 'none',
+        plot.margin = margin(0.5,0.5,0.25,0.25, unit = 'cm'),
+        axis.title.x = element_text(margin=margin(t=10)),
+        axis.title.y = element_text(margin=margin(r=10)),
+        title = element_text(size = 10))
+stars_graph_surv
+```
+
+
+```{r p_base_stars_total_survival}
+##alternative method--base plot
+
+
+#alternative wrangling code -- no waterdate fct
+df_stars<-read_csv(here::here(paste0('track-a-cohort/shared files/STARS/',files))) %>% 
+  bind_rows() %>% 
+  select(1, surv = 2, survL80 = 3, survU80 = 4, idsurv = 17, idsurvL80 = 18, idsurvU80 = 19, idRoute = 32, idRouteL80 = 33, idRouteU80 = 34) %>% 
+  arrange(Date) %>% 
+  mutate(WY = year(Date) + (month(Date) >= 10),
+         wDay = if_else(month(Date) >= 10, yday(Date) - 273, yday(Date) + 92),
+         doy = yday(Date),
+         CY = year(Date),
+         wDate = if_else(month(Date) >= 10, Date + years(1), Date))
+
+
+p_stars_total_survival <- ggplot(df_stars, aes(x = wDay, group = WY)) +
+  geom_line(aes(y = surv)) +
+  labs(x = 'Date (based on water year)', 
+       y = 'Apparent survival probability', 
+       title = 'STARS Overall Survival', 
+       caption = "The solid line shows median survival of daily cohorts of winter run Chinook Salmon through the Delta from Knights Landing to Chipps Island for all routes combined.") +
+  # scale_x_continuous(breaks = seq(1, 365, by = 30), labels = date_to_month(wDate)) +
+  gghighlight() +
+  facet_wrap(~ WY) +
+  geom_ribbon(aes(ymin = survL80, ymax = survU80), alpha = 0.5) +
+  theme_minimal()
+
 
 ```
+
+
+```{r fct_p_stars_total_survival}
+#function to plot wday or doy with WY or CY-- CY needs adjustment and either probability metric from STARS
+
+# Function to convert day of the year to month label
+day_to_month <- function(x) {
+  date <- as.Date(paste(year(today()), x, 1, sep = "-"), format = "%Y-%j")
+  month(date, label = TRUE)
+}
+
+fct_stars_survival_plot <- function(data, x_var, year, metric) {
+  
+  # Define y variable and ribbon variables based on metric
+  y_var <- metric
+  ymin_var <- paste0(metric, "L80")
+  ymax_var <- paste0(metric, "U80")
+  
+        # Define title based on metric
+  rct_title <- switch(metric,
+                  surv = 'STARS model - Overall Survival',
+                  idsurv = 'STARS model -Interior Delta Route-specific Survival Probability',
+                  idRoute = 'STARS model - Interior Delta Route-specific Probability',
+                  'STARS model - Survival')
+  
+    # Define title based on metric
+  rct_caption <- switch(metric,
+                  surv = "The solid line shows median survival of daily cohorts of winter run Chinook Salmon\n through the Delta from Knights Landing to Chipps Island for all routes combined.",
+                  idsurv = "Route-specific survival of daily cohorts of winter run Chinook Salmon\nthrough the Delta from Knights Landing to Chipps Island.",
+                  idRoute = "Proportion of daily cohorts of winter run Chinook Salmon\nthrough the Delta (Knights Landing to Chipps Island) using the Interior Delta route.")
+  
+
+  
+  # Plot
+  p <- ggplot(data, aes_string(x = x_var, group = year)) +
+    geom_line(aes_string(y = y_var)) +
+    labs(x = 'Month\nWater Year: Oct-Dec of year [t-1], Jan-Sep of year [t]',
+         y = 'Probability',
+         title = rct_title,
+         subtitle = "Years of data : 2018 to 2024",
+         #losing caption with plotly--see plotly annotation instead
+         caption = rct_caption) +
+    gghighlight() +
+    facet_wrap(as.formula(paste0("~", year))) +
+    geom_ribbon(aes_string(ymin = ymin_var, ymax = ymax_var), alpha = 0.5) +
+    scale_x_continuous(breaks = seq(1, 365, by = 60), labels = day_to_month) +
+    theme_minimal()
+
+  p <- plotly::ggplotly(p, tooltip = "text")
+  
+  
+
+p <- p %>%
+  plotly::layout(
+  autosize = F,
+  margin = list(
+    l = 50, # left margin
+    r = 50, # right margin
+    b = 100, # bottom margin
+    t = 50, # top margin
+    pad = 4 # padding
+  )
+  #annotation needs work -- if shiny or rmark easier to do outside plot
+) %>% plotly::add_annotations(
+  x = .65,
+  y = -0.31,
+  text = rct_caption,
+  showarrow = F,
+  xref = 'paper',
+  yref = 'paper',
+  xanchor = 'right',
+  yanchor = 'auto',
+  xshift = 0,
+  yshift = 0,
+  font = list(size = 10)
+)
+  
+  return(p)
+}
+
+# Usage:
+fct_stars_survival_plot(data = df_stars, x_var = "wDay", year = "WY", metric = "idRoute")
+fct_stars_survival_plot(data = stars, x_var = "doy", year = "CY", metric = "idRoute")
+```
+
+
+```{r fct_p_stars_total_survival_plotly_lang}
+```
+
+
+
 

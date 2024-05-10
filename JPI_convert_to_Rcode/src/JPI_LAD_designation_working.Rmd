@@ -37,7 +37,13 @@ Bill Poytress information via email exchange:
   "Thanks Jen for the update.  And yes LAD assignment is a macro we run within Access, so hard coding it in R would be a lot better for the process.  The one thing to keep in mind, is that we do after the fact genetic corrections in some cases for spring and winter run in the fall period each year.  I wonder if we should actually assign race and then export the csv's to EDI?  Let me know your thoughts on that situation.  Thanks for the update and progress!!"
 
   "Upon further investigation I found two things regarding run assignment.  A) the rbdd.catch.csv files we have uploaded to EDI include a run designation for all measured fish in the column "run".  B) Fish are designated a runID of "n/p" for all other species and for chinook plus counts that need run assignment through the "Wild_Totals"  macro currently in access that takes the plus count from any given trap and applies the ratio of spring, winter, fall or late-fall fish from the measured fish within a specific sample and applies that value to the plus count fish and then sums them by run.  C) Not sure how the LengthCriteriaRiver.csv file from DWR handles the overlap of foklengths from the original Frank Fisher/Sheila Greene table, but it could be handled differently than the table we use (stored in access) as RunDesignation.  Technically, we followed Johnson et al. 1992 which indicates the value of the forklength overlap should correspond to the later spawning group.    See the table in the access file to confirm, or see the attached, exported copy of the table we use for runID."
+
 ```
+
+
+Flow of events:
+
+1. Fish pass RBDD- a portion are measured for length and date, others are assigned a date but no length. All fish are assigned a either a n/p
 
 ```{r load_libraries, warning=FALSE, message=FALSE}
 library(tidyverse)
