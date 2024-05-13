@@ -243,6 +243,26 @@ df_catch_designation_cbr <- fct_LAD_designation(lad_data = lad_cbr_updated, catc
 
 ```
 
+Compare lad_fws to catch.csv 
+```{r compare_lad_fws_catch_data}
+mismatch<-df_catch_designation_fws %>% 
+  filter(run != run_designation)
+
+# 1 with no length, date = 2016-09-25, run = winter, run_designation = no length
+#24 with no date, has a length, run = (1-fall, 4-late_fall, 19-spring, 0-winter), run_designation = no date
+#the rest match regarding run = not reported, run_designation = ( no length or date, no run designated)
+
+mismatch_rm_noreport<- mismatch %>% 
+  filter(!run_designation %in% c("No length", "No date", "No length or date","no run designated" )) 
+# 2,089 run = fall, run_designation = spring; 3 run_designation = winter, date = 2007-03-20;
+#939 run = late_fall, run_designation = fall
+#500 run = spring, run_designation = winter
+#>300 run = winter. run_designation = something else
+
+
+```
+
+
 Comparing data it seems the designation in April for late-fall is the main discrepancy between fws and cbr: catch and fws designate late_fall and cbr returns no run designation. Look into April min/max. Outside of those, a few discrepancies with 2/4 fall x spring(cbr) (8), 2/16/14 winter x spring (cbr) (1), 2/11 spring x winter,spring(cbr) (4)
 
 ```{r compare_LAD_designation_catch_data}
