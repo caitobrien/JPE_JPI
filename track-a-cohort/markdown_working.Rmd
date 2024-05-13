@@ -4,7 +4,7 @@ output: html_document
 date: "2024-05-09"
 ---
 
-
+#  
 Objective: Using shared resources via [BDO github](https://github.com/BDO-Science/track-a-cohort) from BOR, include more interactive capabilities to certain graphs in form of Rmarkdown and/or shinyapp
 
 Figure from [Track a cohort_WR_plots.docx](https://github.com/BDO-Science/track-a-cohort/blob/main/Track%20a%20Cohort_WR_plots.docx) to include in shiny app:
@@ -15,19 +15,20 @@ Figure from [Track a cohort_WR_plots.docx](https://github.com/BDO-Science/track-
 
 - Figure 5. Cumulative loss -- Current and Historical
 
-```{r load_libraries}
+```{r load_libraries, warning=FALSE, message=FALSE}
 library(here) #to designate file pathways
 library(tidyverse) #data manipulation, includes pkgs such as lubridate and ggplot
 library(gghighlight) #for stars plot- highlight certain years
 library(plotly) #for interactive plots
+library(ggrepel)
 ```
 
 
 
-# Figure 2
+## Figure 2 {.tabset}
 
 - pulls data from STARs, work with Nick to get files needed to plot
-```{r}
+```{r, eval = FALSE, include=FALSE}
 #these steps will adjust with NB's help sourcing all years of data to plot figure
 
 #load files--each represents a year of data sourced fom STARS shiny app
@@ -79,9 +80,11 @@ stars_graph_surv
 ```
 
 
-```{r p_base_stars_total_survival}
+```{r p_base_stars_total_survival, include=FALSE}
 ##alternative method--base plot
 
+#load files--each represents a year of data sourced fom STARS shiny app
+files <- list.files(path = here::here('track-a-cohort/shared files/STARS/'))
 
 #alternative wrangling code -- no waterdate fct
 df_stars<-read_csv(here::here(paste0('track-a-cohort/shared files/STARS/',files))) %>% 
@@ -106,11 +109,10 @@ p_stars_total_survival <- ggplot(df_stars, aes(x = wDay, group = WY)) +
   facet_wrap(~ WY) +
   geom_ribbon(aes(ymin = survL80, ymax = survU80), alpha = 0.5) +
   theme_minimal()
-
-
 ```
 
 
+- To fix: hoover label: best to just rename the datafile for geom_line() -- using tooltip was not working. Look into how to drop gghighlight tooltip
 ```{r fct_p_stars_total_survival}
 #function to plot wday or doy with WY or CY-- CY needs adjustment and either probability metric from STARS
 
@@ -140,25 +142,29 @@ fct_stars_survival_plot <- function(data, x_var, year, metric) {
                   idsurv = "Route-specific survival of daily cohorts of winter run Chinook Salmon\nthrough the Delta from Knights Landing to Chipps Island.",
                   idRoute = "Proportion of daily cohorts of winter run Chinook Salmon\nthrough the Delta (Knights Landing to Chipps Island) using the Interior Delta route.")
   
-
+          # Define title based on metric
+  rct_x_var <- switch(x_var,
+                  wDay =  'Month\n(Water Year: Oct-Dec of year [t-1], Jan-Sep of year [t])',
+                  doy =  'Month\n(Calendar Year: Jan-Dec of year [t])')
+  
+  
   
   # Plot
   p <- ggplot(data, aes_string(x = x_var, group = year)) +
     geom_line(aes_string(y = y_var)) +
-    labs(x = 'Month\nWater Year: Oct-Dec of year [t-1], Jan-Sep of year [t]',
+    labs(x = rct_x_var,
          y = 'Probability',
          title = rct_title,
          subtitle = "Years of data : 2018 to 2024",
          #losing caption with plotly--see plotly annotation instead
          caption = rct_caption) +
-    gghighlight() +
+    gghighlight(use_direct_label = FALSE) +
     facet_wrap(as.formula(paste0("~", year))) +
     geom_ribbon(aes_string(ymin = ymin_var, ymax = ymax_var), alpha = 0.5) +
     scale_x_continuous(breaks = seq(1, 365, by = 60), labels = day_to_month) +
     theme_minimal()
 
-  p <- plotly::ggplotly(p, tooltip = "text")
-  
+  p <- plotly::ggplotly(p)
   
 
 p <- p %>%
@@ -191,12 +197,287 @@ p <- p %>%
 
 # Usage:
 fct_stars_survival_plot(data = df_stars, x_var = "wDay", year = "WY", metric = "idRoute")
-fct_stars_survival_plot(data = stars, x_var = "doy", year = "CY", metric = "idRoute")
+fct_stars_survival_plot(data = df_stars, x_var = "wDay", year = "WY", metric = "idsurv")
+fct_stars_survival_plot(data = df_stars, x_var = "wDay", year = "WY", metric = "surv")
+
+```
+
+## Figure 3
+
+```{r import_loss_data, include=FALSE}
+url <- "https://www.cbr.washington.edu/sacramento/data/php/rpt/juv_loss_detail.php?sc=1&outputFormat=csv&year=all&species=1%3Af&dnaOnly=no&age=no"
+
+#filter to include only winter-run chinook for LAD or winter-run for DNA
+loss.wch <- read.csv(url) %>%
+  filter(LAD.Race == 'Winter'| DNA.Race == 'Winter') 
+  
+#adjust imported loss to WY 
+df_loss <- loss.wch %>% select(Sample.Time, Facility, LAD.Race, DNA.Race, Length, nfish, Expanded.Salvage, Loss) %>%
+  mutate(Date = as.Date(Sample.Time)) %>%
+  arrange(Date) %>%
+  mutate(WY = year(Date) + (month(Date) >= 10),
+         wDay = if_else(month(Date) >= 10, yday(Date) - 273, yday(Date) + 92),
+         doy = yday(Date),
+         CY = year(Date),
+         wDate = if_else(month(Date) >= 10, Date + years(1), Date))
+```
+
+### Figure 3a JPE percent
+
+- uses 02_HistoricWRSalvageandLoss.R - Nick Bertrund's code
+
+Questions:
+
+- `JPE_Genetic_Loss_Comparison.csv` where is this data sourced from? Why wouldn't the genetic loss from url in `import_loss_data` match? OR why is an additional csv, `WRgenetic.csv` needed? Need one file and sum within-- too many random files 
+
+```{r p_jpe_genetic_loss_pct, fig.width=10, echo = FALSE, message=FALSE}
+#pull in JPES and genetic loss data
+ JPE_Genetic_Loss_Comparison<- read_csv(here::here('track-a-cohort/shared files/JPE_Genetic_Loss_Comparison.csv'))
+
+
+jpe_long <- JPE_Genetic_Loss_Comparison %>% 
+  select(WaterYear,BroodYear,JuvenileProductionEstimate,PercentJPE_genetic,PercentJPE_LAD) %>% 
+  # rename(`Juvenile Production Estimate`= JuvenileProductionEstimate,`Percent JPE Genetic Loss` = PercentJPE_genetic, `Percent JPE LAD Loss`= PercentJPE_LAD) %>% 
+  pivot_longer(cols =PercentJPE_genetic:PercentJPE_LAD, names_to = "method", values_to = "value")
+
+
+
+#bar plot of genetic and LAD loss
+p_jpe_genetic_lad_barplot <- 
+  ggplot(data=jpe_long, aes(x=as.factor(BroodYear), y= value, fill=method)) +
+  geom_bar(stat="identity", position=position_dodge())+
+  labs(title = "Genetic vs Length-At-Date (LAD) Historical Percent Loss of the JPE\n")+
+  labs(x = "Brood Year", 
+       y = "Percent of the JPE Lost", #change title
+       fill = NULL) +
+  scale_y_continuous(breaks = seq(0, 6, by = 2), limits = c(0, 6), expand = c(0, 0))+
+  scale_fill_manual(values = c("black", "grey"),
+                    labels = c("Genetic", "LAD"))+
+  theme_minimal() +
+    theme(legend.position = c(.9,.65), 
+          axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5),
+          panel.grid.major.x = element_blank(), 
+          axis.line.x = element_line(color = "black", .5),
+          axis.ticks.x = element_line(color = "black"), 
+          text = element_text(size = 15))
+
+p_jpe_genetic_lad_barplot
+```
+
+### Figure 3b JPE count
+```{r p_jpe_genetic_loss_count, fig.width=10, echo = FALSE, message=FALSE}
+#pull in JPES and genetic loss data
+ JPE_Genetic_Loss_Comparison<- read_csv(here::here('track-a-cohort/shared files/JPE_Genetic_Loss_Comparison.csv'))
+
+
+jpe_long <- JPE_Genetic_Loss_Comparison %>% 
+  select(WaterYear,BroodYear,JuvenileProductionEstimate,LAD = WinterRun_LAD_Loss,Genetic = WinterRun_Genetic_Loss) %>% 
+  # rename(`Juvenile Production Estimate`= JuvenileProductionEstimate,`Percent JPE Genetic Loss` = PercentJPE_genetic, `Percent JPE LAD Loss`= PercentJPE_LAD) %>% 
+  pivot_longer(cols =LAD:Genetic, names_to = "method", values_to = "value")
+
+
+
+#bar plot of genetic and LAD loss
+p <- 
+  ggplot(data=jpe_long, aes(x=as.factor(BroodYear), y= value, fill=method)) +
+  geom_bar(stat="identity", position=position_dodge())+
+  labs(title = "Genetic vs Length-At-Date (LAD) Historical Number Lost of the JPE\n")+
+  labs(x = "Brood Year", 
+       y = "Number of Winter-run JPE lost", #change title
+       fill = NULL) +
+  # scale_y_continuous(breaks = seq(0, 20000, by = 5000), limits = c(0, 20000), expand = c(0, 0))+
+  scale_fill_manual(values = c("black","grey" ),
+                    breaks = c("Genetic", "LAD"))+
+  theme_minimal() +
+    theme(legend.position = c(.9,.65), 
+          axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5),
+          panel.grid.major.x = element_blank(), 
+          axis.line.x = element_line(color = "black", .5),
+          axis.ticks.x = element_line(color = "black"), 
+          text = element_text(size = 15))
+
+p
 ```
 
 
-```{r fct_p_stars_total_survival_plotly_lang}
+## Figure 4
+Questions: 
+
+- query from : https://www.cbr.washington.edu/sacramento/data/query_loss_detail.html with all years, species, and no LAD age restriction, but  requires dna?
+
+- filters to include winter for LAD OR winter for DNA, which also filters to include only chinook
+  - could filter further to include only winter-run chinook for LAD and DNA diff or ~5700 to ~1700
+
+- for some reason, the [url generated via query tool](https://www.cbr.washington.edu/sacramento/data/php/rpt/juv_loss_detail.php?sc=1&outputFormat=default&year=all&species=1%3Aall&dnaOnly=yes&age=no)  for all chinook, all years, and no LAD age restriction, but requires dna, does not return nearly as many records as the url generated by BOR. Will use theres for now-- look into why. 
+
+- Uses WYtype.csv -- what is this data? Headers include: WY, Basin, Oct-Mar, Apr-Jul, WYsum, Index, Yr-type -- Yr-type seems to be designating dry/wet  year -- where can this be sourced? This information will be hosted on SacPas updated website June 2024. The data is pulling from [CDEC](https://cdec.water.ca.gov/reportapp/javareports?name=WSIHIST). Working with static file until I can update. 
+
+
+- for fig3b, pull in winter for LAD or DNA, but then only plot LAD 
+
+```{r fig3_shared_code, eval=FALSE, include=FALSE}
+url_orig <- 'https://www.cbr.washington.edu/sacramento/data/php/rpt/juv_loss_detail.php?sc=1&outputFormat=csv&year=all&species=1%3Af&dnaOnly=no&age=no'
+url <- "https://www.cbr.washington.edu/sacramento/data/php/rpt/juv_loss_detail.php?sc=1&outputFormat=csv&year=all&species=1%3Af&dnaOnly=no&age=no"
+loss <- read.csv(url) %>%
+  filter(LAD.Race == 'Winter'| DNA.Race == 'Winter')
+
+waterDay<-readRDS(here::here("track-a-cohort/shared files/waterDay.rds"))
+
+wytype <- read.csv('track-a-cohort/shared files/WYtype.csv') %>% filter(Basin == "SacramentoValley") %>%mutate(TYPE = Yr.type)
+loss <- loss %>% select(Date = 1, 2, 5, 6, 11, 12, ExpSalv = 13, 14) %>%
+  mutate(Date = as.Date(Date)) %>%
+  mutate(WY = get_fy(Date, opt_fy_start = '10-01')) %>%
+  mutate(wDay = waterDay(Date))
+
+cumulativeLAD <- loss %>% filter(LAD.Race == 'Winter') %>% group_by(WY) %>%
+  mutate(cumloss = cumsum(Loss), cumsalvage = cumsum(ExpSalv), cumCount = cumsum(nfish)) %>%
+  mutate(Status = case_when(WY < 2009 ~ 'Pre-2009 BiOp',
+                            WY > 2008 ~ '2009 & 2019 BiOp')) %>%
+  left_join(wytype, by = 'WY') %>%
+  filter(!is.na(Date)) %>%
+  mutate(History = if_else(WY == '2024', 'Current', 'Past')) %>%
+  mutate(Type2 = if_else(TYPE %in% c('W', 'AN'), 'Wet', 'Dry')) %>%
+  mutate(Status = factor(Status, levels = c('Pre-2009 BiOp', '2009 & 2019 BiOp')))
+
+
+yearsLAD <- cumulativeLAD %>% group_by(WY, Status, TYPE, Type2) %>% summarize(Day = max(wDay), Loss = max(cumloss))
+max2024LAD <- cumulativeLAD %>% filter(WY == 2024 & cumloss == max(cumloss)) %>% pull(cumloss)
+loss2024LAD <- cumulativeLAD %>% filter(WY == 2024) %>% select(10, 11)
+label2024 <- data.frame(x = 90, y = 1250, label = '2024')
+
+WR <- ggplot() +
+  geom_line(filter(cumulativeLAD, WY < 2024), 
+            mapping = aes(x = wDay, y = cumloss, group = factor(WY)), color = 'grey', linewidth = 1)+
+  geom_line(loss2024LAD, 
+            mapping = aes(x = wDay, y = cumloss), color = 'steelblue2', linewidth = 1.5)+
+  geom_text_repel(filter(yearsLAD, Loss > max2024LAD), mapping = aes(x = Day+1, y = Loss, label = WY), 
+            size = 3, fontface = 'bold', alpha = 0.75, min.segment.length = .1) +
+  facet_grid(Status ~ Type2) +
+  labs(x = 'Date', y = 'Cumulative Loss', title = 'Winter-run Current and Historic Cumulative Salvage') +
+  scale_x_continuous(breaks = c(93,152,213,274), labels = c('Jan', 'Mar', 'May', 'Jul')) +
+  theme(plot.margin = margin(0.5,0.5,0.25,0.25, unit = 'cm'),
+        axis.title.x = element_text(margin=margin(t=10)),
+        axis.title.y = element_text(margin=margin(r=10)))
+WR
 ```
+
+
+```{r fig3_import_wrangle data, echo=FALSE, message=FALSE}
+url <- "https://www.cbr.washington.edu/sacramento/data/php/rpt/juv_loss_detail.php?sc=1&outputFormat=csv&year=all&species=1%3Af&dnaOnly=no&age=no"
+
+#filter to include only winter-run chinook for LAD or winter-run for DNA
+loss.wch <- read.csv(url) %>%
+  filter(LAD.Race == 'Winter'| DNA.Race == 'Winter') 
+  
+#adjust imported loss to WY 
+df_loss <- loss.wch %>% select(Sample.Time, Facility, LAD.Race, DNA.Race, Length, nfish, Expanded.Salvage, Loss) %>%
+  mutate(Date = as.Date(Sample.Time)) %>%
+  arrange(Date) %>%
+  mutate(WY = year(Date) + (month(Date) >= 10),
+         wDay = if_else(month(Date) >= 10, yday(Date) - 273, yday(Date) + 92),
+         doy = yday(Date),
+         CY = year(Date),
+         wDate = if_else(month(Date) >= 10, Date + years(1), Date))
+
+#pull in shared wytype.csv-- look to automate this process
+wytype <- read_csv(here::here('track-a-cohort/shared files/WYtype.csv')) %>% filter(Basin == "SacramentoValley")
+
+#Further filter to only plot winter-run chinook for LAD
+cumulativeLAD <- df_loss %>% filter(LAD.Race == 'Winter') %>% group_by(WY) %>%
+  mutate(cumloss = cumsum(Loss), cumsalvage = cumsum(Expanded.Salvage), cumCount = cumsum(nfish)) %>%
+  #designate pre/post 2009 BiOp
+  mutate(Status = case_when(WY < 2009 ~ 'Pre-2009 BiOp\n(1994 to 2008)',
+                            WY > 2008 ~ '2009 & 2019 BiOp\n(2009 to present)')) %>%
+  #set order of factor levels
+  mutate(Status = factor(Status, levels = c('Pre-2009 BiOp\n(1994 to 2008)', '2009 & 2019 BiOp\n(2009 to present)'))) %>% 
+  #join with wytype to designate wet/dry year (Hydrologic Classification Index?)
+  left_join(select(wytype,WY, `Yr-type`) , by = 'WY') %>%
+  #remove date na's
+  filter(!is.na(Date)) %>%
+  #label historical versus current year
+  mutate(History = if_else(WY == '2024', 'Current', 'Past')) %>%
+  #relabel wytype Yr.type to Wet/Dry -- add all?
+  mutate(Type2 = if_else(`Yr-type` %in% c('W', 'AN'), 'Wet', 'Dry'))
+  
+
+  # yearsLAD <- cumulativeLAD %>% group_by(WY, Status, Yr-type, Type2) %>% summarize(Day = max(wDay), Loss = max(cumloss))
+  # 
+  # #extract values to then plot 2024 loss for all facets to compare years against
+  # loss2024LAD <- cumulativeLAD %>% filter(WY == 2024) %>% select(WY, wDay)
+  # label2024 <- data.frame(x = 90, y = 1250, label = '2024')
+```
+
+
+```{r p_figure3, echo=FALSE, message=FALSE, fig.width=10, fig.height=8}
+#plot
+
+# #set function to 2024?
+# day_to_month <- function(day) {
+#   month <- as.Date(paste(2024, day), format = "%Y %j") %>% format("%b")
+#   return(month)
+# }
+
+#plot all years together  
+p1<-cumulativeLAD %>% 
+ ggplot() +
+  geom_line( aes(x = wDay, y = cumloss, group = WY, color = if_else(WY == 2024, "black", "grey")))+
+  labs(x = 'Date', y = 'Cumulative Loss', title = 'Winter-run Current and Historic Cumulative Salvage') +
+  scale_x_continuous(breaks = c(93,152,213,274), labels = c('Jan', 'Mar', 'May', 'Jul')) +
+  # scale_x_continuous(breaks = seq(1, 365, by = 30.5), labels = day_to_month) +
+  scale_y_continuous(breaks = seq(0, 20000, by = 5000), limits = c(0, 20000), expand = c(0, 0))+
+  scale_color_identity()+
+  theme_minimal() +
+  theme(
+        panel.grid.major.x = element_blank(), 
+        axis.line.x = element_line(color = "black", .5),
+         axis.line.y = element_line(color = "black", .5),
+        axis.ticks.x = element_line(color = "black"), 
+        text = element_text(size = 15))
+p1
+
+
+#plot by dry/wet and pre/post 2009 BiOp
+
+#extract max cumloss of 2024 to adjust color 
+max2024LAD <- cumulativeLAD %>% 
+  filter(WY == 2024) %>% 
+  summarise(max_cumloss = max(cumloss)) %>% 
+  pull(max_cumloss)
+
+#extract maximum cumloss for each year (for labels)
+max_cumloss_per_year <- cumulativeLAD %>%
+  group_by(WY) %>%
+  filter(cumloss == max(cumloss))
+
+#Data frame that contains only the data for the year 2001 (for year labels excluding >10,000)
+year2001_data <- cumulativeLAD %>% filter(WY == 2001, cumloss < 10000)
+
+p2 <- cumulativeLAD %>%
+  filter(cumloss < 10000) %>% 
+  ggplot() +
+  geom_line(aes(x = wDay, y = cumloss, group = WY, color = if_else(WY == 2024, "black", if_else(cumloss > max2024LAD, "black", "grey")))) +
+  geom_hline(yintercept = max2024LAD, linetype = "dashed", color = "black") +
+  ggrepel::geom_text_repel(data = subset(max_cumloss_per_year, cumloss >= max2024LAD), aes(x = wDay, y = cumloss, label = WY), size = 3,  nudge_y = 10, nudge_x = 2) +
+  geom_text(data = year2001_data, aes(x = 197, y = 9500, label = "*2001"), size = 3, family = "Calibri",fontface = "plain") +
+  labs(x = 'Date', 
+       y = 'Cumulative Loss', 
+       title = 'Winter-run Current and Historic Cumulative Salvage') +
+  scale_x_continuous(breaks = c(93,152,213,274), labels = c('Jan', 'Mar', 'May', 'Jul')) +
+  scale_y_continuous(breaks = seq(0, 10000, by = 2000), limits = c(0, 10000), expand = c(0, 0)) +
+  scale_color_identity() +
+  ggh4x::facet_nested( ~ Status + Type2) +
+  theme_minimal() +
+  theme(
+    panel.grid.major.x = element_blank(), 
+        panel.border = element_rect(colour = "grey", fill=NA),
+    axis.ticks.x = element_line(color = "black"), 
+    text = element_text(size = 15))
+p2
+
+
+
+```
+
 
 
 
