@@ -120,9 +120,9 @@ rm(lad_cbr)
 rm(lad_usfws_raw)
 ```
 
-Compare lad tables Note: min/max1 seems to be switched for minmax2 for some of cbr matrix. Code at the bottom of this chunk rearranges to match lad_fws organization. Based on this change, only 98 rows of mm/dd/run differ between the two tables. - with introduction of NA's no longer an issue
+Compare lad tables-- Note: with introduction of NA's via DWR/CBR method, many rows are mismatched-- not an accurate assessment. Instead compare final run designation. Keeping just for reference
 
-```{r compare_LAD_designation_tables}
+```{r compare_LAD_designation_tables, eval = FALSE, include=FALSE}
 
 lad_fws <- lad_fws %>%
   mutate(mm = as.integer(mm),
@@ -132,11 +132,6 @@ lad_fws <- lad_fws %>%
 lad_cbr_long <- lad_cbr_long %>%
    mutate(dataset = "cbr")
 
-# # Compare the data frames
-# diff_rows <- lad_cbr_long %>%
-#   mutate(dataset = "cbr") %>% 
-#   anti_join(lad_fws, by = c("mm", "dd", "RunDesignation", "MinLength1", "MaxLength1", "MinLength2", "MaxLength2"))
-# 
 
 # Combine the data frames
 combined_df <- bind_rows(lad_fws, lad_cbr_long)
@@ -151,52 +146,7 @@ same_rows <- combined_df %>%
   group_by(mm, dd, RunDesignation, MinLength1, MaxLength1, MinLength2, MaxLength2) %>%
   filter(n() > 1)
 
-#seems that the maxmin are just mirrored in a lot of diff_rows---re-sort to match min/max 1 and 2
-#rename columns to re-sort
-diff_rows_recode <- diff_rows %>% 
-  filter(dataset == "cbr") %>% 
-  rename(MinLength1 = "MinLength2",
-         MaxLength1 = "MaxLength2",
-         MinLength2 = "MinLength1",
-         MaxLength2 = "MaxLength1")
-#join cbr re-sorted back to fws 
-diff_reorg<-diff_rows %>% 
-  filter(dataset == "fws") %>% 
-  bind_rows(diff_rows_recode)
-
-#pull remaining rows that don't match -- much better 
-diff_rows_reorg <- diff_reorg %>%
-  group_by(mm, dd, RunDesignation, MinLength1, MaxLength1, MinLength2, MaxLength2) %>%
-  filter(n() == 1)
-
-
-## add reorg back to main cbr designation table to use/redo catch run designation to compare
-# Remove rows from lad_cbr_long that are in diff_rows_recode
-updated_lad_cbr_long <- lad_cbr_long %>%
-  anti_join(diff_rows_recode, by = c("mm", "dd", "RunDesignation"))
-
-# Add the rows from diff_rows_recode
-lad_cbr_updated<- bind_rows(updated_lad_cbr_long, diff_rows_recode)
-
-###check by joining with fws again
-
-# Combine the data frames
-combined_df <- bind_rows(lad_fws, lad_cbr_updated)
-
-# Find the rows that only appear in one data frame -- matched 98 that do not match from code above
-diff_rows <- combined_df %>%
-  group_by(mm, dd, RunDesignation, MinLength1, MaxLength1, MinLength2, MaxLength2) %>%
-  filter(n() == 1)
-
-diff_rows_plot <-diff_rows %>% 
-  pivot_longer(cols = c(4:7),
-               names_to = "threshold",
-               values_to = "length") %>% 
-    mutate(date = make_date(year = 2012, month = mm, day = dd),  # set a year
-         doy= yday(date))    # Extract the day of the year
-  # filter(threshold %in% c("MinLength1")) # "MinLength2" 
-  
-
+  # plot
 ggplot(diff_rows_plot, aes(x=doy, y = length )) +
     geom_point( aes(color = dataset, shape = dataset)) +
   scale_shape_manual(values = c(0,16)) 
@@ -248,17 +198,16 @@ fct_LAD_designation <- function(lad_data, catch_data){
 
 #check designations
 df_catch_designation_fws <- fct_LAD_designation(lad_data = lad_fws, catch_data = df_catch)
-df_catch_designation_cbr <- fct_LAD_designation(lad_data = lad_cbr_updated, catch_data = df_catch)
 
-#using NA's-- extact run
-df_catch_designation_cbr_na <- fct_LAD_designation(lad_data = lad_cbr_long, catch_data = df_catch)
-
-df_catch_designation_cbr_na <- df_catch_designation_cbr_na %>%
-  mutate(run_designation_na = str_extract(run_designation, "\\b(?!NA\\b)[^,]+"))
+#will update but keeping all matches returned to confirm function is working properly which causes all NAs to return
+df_catch_designation_cbr <- fct_LAD_designation(lad_data = lad_cbr_long, catch_data = df_catch) #returns all NA matches-- extract run via:
+  #Remove NA's and extact run
+  df_catch_designation_cbr <- df_catch_designation_cbr %>%
+    mutate(run_designation = str_extract(run_designation, "\\b(?!NA\\b)[^,]+")) 
 
 #save data
- # save(df_catch_designation_fws, file =here::here("JPI_convert_to_Rcode/data","catch_run_designation_fws.rda"), compress = "xz")
-  
+# save(df_catch_designation_fws, file =here::here("JPI_convert_to_Rcode/data","catch_run_designation_fws.rda"), compress = "xz")
+#   
 # save(df_catch_designation_cbr, file =here::here("JPI_convert_to_Rcode/data","catch_run_designation_cbr.rda"), compress = "xz")
 
 ```
@@ -283,13 +232,18 @@ mismatch_rm_noreport<- mismatch %>%
 ```
 
 
-Comparing data it seems the designation in April for late-fall is the main discrepancy between fws and cbr: catch and fws designate late_fall and cbr returns no run designation. Look into April min/max. Outside of those, a few discrepancies with 2/4 fall x spring(cbr) (8), 2/16/14 winter x spring (cbr) (1), 2/11 spring x winter,spring(cbr) (4)
+Comparing method types: 
+
+Differing thresholds between FWS and DWR/CBR (with updated NA's in DWR/CBR method):
+2/4- CBR: 0-50, 51-69 , fws: 0-51, 52-69
+2/11- CBR: 54-72, 72-145; fws:54-72, 73-145
+2/16: CBR: 56-75, 76-150  fws: 56-74, 75-150
 
 ```{r compare_LAD_designation_catch_data}
 # Join the data frames
 df_join <- df_catch_designation_fws %>%
   select(start_date, mm, dd, fork_length, run, run_designation_fws = run_designation) %>%
- cbind(run_designation_cbr = df_catch_designation_cbr_na$run_designation_na) %>% 
+ cbind(run_designation_cbr = df_catch_designation_cbr$run_designation) %>% 
     mutate(year = year(start_date),
          doy = yday(start_date)) 
 
@@ -307,22 +261,21 @@ df_different_runs <- df_join %>%
 # Filter the rows where run_designation_fws and run_designation_cbr are not the same
 df_different_runs_cbr.fws <- df_join %>%
   filter( run_designation_fws != run_designation_cbr) %>% 
-    filter(!is.na(fork_length))
+    filter(!is.na(fork_length)) 
+
+df_different_runs_cbr.fws 
 ```
 
-Differing thresholds (with updated NA's in DWR/CBR method):
-2/4- CBR: 0-50, 51-69 , fws: 0-51, 52-69
-2/11- CBR: 54-72, 72-145; fws:54-72, 73-145
-2/16: CBR: 56-75, 76-150  fws: 56-74, 75-150
+Beginning plots to see differences 
 
 ```{r plot_designations, fig.width=12}
 
 lad <- bind_rows(
   lad_fws %>% mutate(dataset = "fws"),
-  lad_cbr_updated %>% mutate(dataset = "cbr")
+  lad_cbr_long %>% mutate(dataset = "cbr")
 )
 
-lad_plot<-combined_df %>% 
+lad_plot<-lad %>% 
   pivot_longer(cols = c(4:7),
                names_to = "threshold",
                values_to = "length") %>% 
