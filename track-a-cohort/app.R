@@ -3,6 +3,7 @@ library(shinydashboard)
 library(plotly)
 library(tidyverse)
 library(xts)
+library(gghighlight)
 
 # Function to convert DOY to month name
 doy_to_month <- function(doy, year_type) {
