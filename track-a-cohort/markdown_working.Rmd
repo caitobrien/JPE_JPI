@@ -36,7 +36,13 @@ library(gghighlight) #for stars plot- highlight certain years
 library(plotly) #for interactive plots
 library(ggrepel) #for ggplot labels
 library(xts) #NB code to import STARs data
+library(CDECRetrieve) #download cdec hydrological classification table
 ```
+
+```{r include=FALSE}
+CDECRetrieve::water_year_indices
+```
+
 
 **Current figures**
 
@@ -127,7 +133,7 @@ load(here::here("track-a-cohort/STARS.shinyinputs.Rdata")) #COB removed verbose=
 # print(head(index(WR_xts)))
 
 # Subset the data and convert to tibble
-df_stars <- as_tibble(WR_xts[,c("Survival Interior Delta Est", 
+df_stars_raw <- as_tibble(WR_xts[,c("Survival Interior Delta Est", 
                                 "Survival Interior Delta LCL 80", 
                                 "Survival Interior Delta UCL 80",
                                 "Routing Probability Interior Delta Est",    
@@ -150,6 +156,16 @@ df_stars <- as_tibble(WR_xts[,c("Survival Interior Delta Est",
          doy = yday(date),
          CY = year(date),
          wDate = if_else(month(date) >= 10, date + years(1), date)) 
+
+
+#get hydrological classification table
+hydro_type<-CDECRetrieve::water_year_indices %>% 
+  filter(location == "Sacramento Valley") %>% 
+  select(wy, yr_type)
+
+#combine hydro year infor with stars data
+df_stars<-df_stars_raw %>% 
+  left_join(hydro_type, by = c("WY" = "wy"))
   
 
 #If wanting late_fall 
@@ -160,7 +176,7 @@ df_stars <- as_tibble(WR_xts[,c("Survival Interior Delta Est",
 ```
 
 ```{r p_base_stars_total_survival, eval = FALSE, include=FALSE}
-p_stars_total_survival <- ggplot(df_stars, aes(x = wDay, group = WY)) +
+p_stars_total_survival <- ggplot(df_stars, aes(x = wDay, group = WY, color = yr_type)) +
   geom_line(aes(y = surv)) +
   labs(x = 'Date (based on water year)', 
        y = 'Apparent survival probability', 
@@ -171,6 +187,8 @@ p_stars_total_survival <- ggplot(df_stars, aes(x = wDay, group = WY)) +
   facet_wrap(~ WY) +
   geom_ribbon(aes(ymin = survL80, ymax = survU80), alpha = 0.5) +
   theme_minimal()
+
+p_stars_total_survival
 ```
 
 Function code used to plot along with warning message
@@ -596,5 +614,12 @@ Questions:
 
 
 
+## Figure 6. 
 
+
+```{r}
+
+```
+
+---
 
