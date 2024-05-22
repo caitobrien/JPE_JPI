@@ -66,36 +66,7 @@ fct_stars_survival_plot <- function(data, x_var, year, metric) {
     scale_x_continuous(breaks = seq(1, 365, by = 60), labels = labels) +
     # scale_x_continuous(breaks = seq(1, 365, by = 60), labels = day_to_month) +
     theme_minimal()
-  
-  p <- plotly::ggplotly(p)
-  
-  
-  p <- p %>%
-    plotly::layout(
-      autosize = F,
-      margin = list(
-        l = 50, # left margin
-        r = 50, # right margin
-        b = 100, # bottom margin
-        t = 50, # top margin
-        pad = 4 # padding
-      )
-      
-    ) 
-  #annotation needs work -- if shiny or rmark easier to do outside plot
-  # %>% plotly::add_annotations(
-  #     x = .65,
-  #     y = -0.31,
-  #     text = rct_caption,
-  #     showarrow = F,
-  #     xref = 'paper',
-  #     yref = 'paper',
-  #     xanchor = 'right',
-  #     yanchor = 'auto',
-  #     xshift = 0,
-  #     yshift = 0,
-  #     font = list(size = 10)
-  #   )
+
   
   return(p)
 }
