@@ -297,7 +297,7 @@ p1<-cumulativeLAD %>%
  ggplot() +
   # geom_line( aes(x = wDay, y = cumloss, group = WY, color = if_else(WY == 2024, "black", ifelse(Type2 == "Dry", "brown", "cadetblue3")),lwd = if_else(WY == 2024, .5, .05)))+
     geom_line( data = subset(cumulativeLAD, WY != 2024), aes(x=wDay, y = cumloss, group = WY, color = hydro_type), lwd = .40)+
-  geom_line( data = subset(cumulativeLAD, WY == 2024), aes( x=wDay, y = cumloss, group = WY, linetype = as.factor(WY)), color = "black", lwd = 1,5)+
+  geom_line( data = subset(cumulativeLAD, WY == 2024), aes( x=wDay, y = cumloss, group = WY, linetype = as.factor(WY)), color = "black", lwd = 1.5)+
   labs(x = 'Date', 
        y = 'Cumulative Loss', 
        # title = 'Winter-run Chinook salmon - Current and Historical Cumulative Salvage',
