@@ -20,7 +20,7 @@ doy_to_month <- function(doy, year_type) {
 }
 
 # Function to plot figures 
-fct_stars_survival_plot <- function(data, x_var, year, metric) {
+fct_stars_survival_plot <- function(data, x_var, year, metric, hydro, hydro_type) {
   
   # Define y variable and ribbon variables based on metric
   y_var <- metric
@@ -47,28 +47,45 @@ fct_stars_survival_plot <- function(data, x_var, year, metric) {
   
   # Generate the labels for the x-axis
   labels <- sapply(seq(1, 365, by = 60), function(doy) doy_to_month(doy, year))
+
+  
+  # Define color based on hydro
+  color_var <- if (hydro == "TRUE") {
+    hydro_type
+  } else {
+    NULL
+  }
+  
+  # Define all possible levels of hydro_type
+  all_levels <- c("Wet", "Above Normal", "Below Normal", "Dry", "Critical")
+  
+  # Create a color palette that includes all possible levels
+  color_palette <- setNames(c("darkblue", "cadetblue", "honeydew3", "navajowhite3", "salmon4"), all_levels)
   
   
   
   # Plot
+  
   p <- ggplot(data, aes_string(x = x_var, group = year)) +
-    geom_line(aes_string(y = y_var)) +
+    geom_line(aes_string(y = y_var, color = color_var)) +
     labs(x = rct_x_var,
          y = 'Probability',
          title =  NULL,#rct_title,
-         subtitle = "Years of data : 2018 to 2024"
+         subtitle = "Years of data : 2018 to 2024",
          #losing caption with plotly--see plotly annotation instead
          # caption = rct_caption
+         color = "Hydrologic Classification Indices"
          ) +
+    scale_color_manual(values = color_palette, drop = FALSE) +
     gghighlight(use_direct_label = FALSE) +
     facet_wrap(as.formula(paste0("~", year))) +
-    geom_ribbon(aes_string(ymin = ymin_var, ymax = ymax_var), alpha = 0.5) +
+    geom_ribbon(aes_string(ymin = ymin_var, ymax = ymax_var), alpha = 0.25) +
     scale_x_continuous(breaks = seq(1, 365, by = 60), labels = labels) +
     # scale_x_continuous(breaks = seq(1, 365, by = 60), labels = day_to_month) +
     theme_minimal()
 
   
-  return(p)
+return(p)
 }
 
 ui <- dashboardPage(
@@ -79,7 +96,7 @@ ui <- dashboardPage(
       box(
         width = 12,
         fluidRow(
-        column(width = 4,
+        column(width = 3,
         selectInput(
         inputId = "select_yeartype",
         label = "Select year type:", 
@@ -87,27 +104,42 @@ ui <- dashboardPage(
         multiple = FALSE)
         ),
         column(
-          width = 4,
+          width = 3,
           selectInput(
                   inputId = "select_metric", 
                   label = "Select Probability:", 
-                  choices = c("idRoute", "idsurv", "surv"),
+                  choices = c("Overall Survival" = "surv",
+                              "Interior Delta Route-specific Survival Probability" = "idsurv",
+                              "Interior Delta Route-specific Probability" = "idRoute"),
                   multiple = FALSE)
-        )
         ),
-        column(
-          width = 4,
-          selectInput(
-            inputId = "select_years", 
-            label = "Select years of interest:", 
-            choices = 2017:2024,
-            multiple = TRUE,
-            selected = c(2017:2024)
+      column(
+        width = 3,
+        selectInput(
+          inputId = "select_year", 
+          label = "View years:", 
+          choices = c("All years", 2017:2024),
+          selected = "All years"
         )
+      )
       )
       ),
     box(
       width = 12,
+      fluidRow(
+        column(
+          width = 9
+        ),
+      column(
+        width = 3,
+        shinyWidgets::materialSwitch(
+          inputId = "select_hydro", 
+          label = "Show Hydrologic Year Type", 
+          value = TRUE,
+          status = "primary"
+        )
+      )
+      ),
       uiOutput("plot_caption"),
       plotlyOutput("plot")
       )
@@ -121,7 +153,7 @@ server <- function(input, output, session) {
     load(here::here("track-a-cohort/STARS.shinyinputs.Rdata")) #COB removed verbose=T to run with here::here
     
     # Subset the data and convert to tibble
-    df_stars <- as_tibble(WR_xts[,c("Survival Interior Delta Est", 
+    df_stars_raw <- as_tibble(WR_xts[,c("Survival Interior Delta Est", 
                                     "Survival Interior Delta LCL 80", 
                                     "Survival Interior Delta UCL 80",
                                     "Routing Probability Interior Delta Est",    
@@ -145,6 +177,14 @@ server <- function(input, output, session) {
              CY = year(date),
              wDate = if_else(month(date) >= 10, date + years(1), date))
     
+    #pull in shared wytype.csv
+    wytype <- read_csv(here::here('track-a-cohort/shared files/WYtype.csv')) %>% filter(Basin == "SacramentoValley")
+    
+    #append wytype to stars results
+    df_stars<-df_stars_raw %>% 
+      inner_join(select(wytype, WY, hydro_type = `Yr-type`), by = "WY") %>% 
+      mutate( hydro_type = factor(hydro_type, levels = c("W", "AN", "BN", "D", "C"), labels = c("Wet", "Above Normal", "Below Normal", "Dry", "Critical")))
+    
     # Add this reactive expression
     output$plot_caption <- renderUI({
       HTML(switch(input$select_metric,
@@ -155,16 +195,38 @@ server <- function(input, output, session) {
            )
     })
     
+    # # Filter data
+    # filtered_data <- df_stars %>% 
+    #   filter(WY %in% input$select_years,
+    #          CY %in% input$select_years)
     # Filter data
-    filtered_data <- df_stars %>% 
-      filter(WY %in% input$select_years,
-             CY %in% input$select_years)
+    if (input$select_year == "All years") {
+           df_stars
+    } else {
+      filtered_data <- df_stars %>% 
+        filter(WY == input$select_year , CY == input$select_year)
+    }
+    
+    # if(input$select_yeartype == "Water Year") {
+    #   p<-fct_stars_survival_plot(data = filtered_data, x_var = "wDay", year = "WY", metric = input$select_metric, hydro = as.character(input$select_hydro), hydro_type = df_stars$hydro_type)
+    # } else {
+    #   p<-fct_stars_survival_plot(data =  filtered_data, x_var = "doy", year = "CY", metric = input$select_metric, hydro = as.character(input$select_hydro), hydro_type = df_stars$hydro_type)
+    # }
     
     if(input$select_yeartype == "Water Year") {
-      p<-fct_stars_survival_plot(filtered_data, x_var = "wDay", year = "WY", input$select_metric)
+      if (input$select_year == "All years") {
+        p <- fct_stars_survival_plot(data = df_stars, x_var = "wDay", year = "WY", metric = input$select_metric, hydro = as.character(input$select_hydro), hydro_type = df_stars$hydro_type)
+      } else {
+        p <- fct_stars_survival_plot(data = filtered_data, x_var = "wDay", year = "WY", metric = input$select_metric, hydro = as.character(input$select_hydro), hydro_type = filtered_data$hydro_type)
+      }
     } else {
-      p<-fct_stars_survival_plot(filtered_data, x_var = "doy", year = "CY", input$select_metric)
+      if (input$select_year == "All years") {
+        p <- fct_stars_survival_plot(data = df_stars, x_var = "doy", year = "CY", metric = input$select_metric, hydro = as.character(input$select_hydro), hydro_type = df_stars$hydro_type)
+      } else {
+        p <- fct_stars_survival_plot(data = filtered_data, x_var = "doy", year = "CY", metric = input$select_metric, hydro = as.character(input$select_hydro), hydro_type = filtered_data$hydro_type)
+      }
     }
+  
     
    return(p)
     
