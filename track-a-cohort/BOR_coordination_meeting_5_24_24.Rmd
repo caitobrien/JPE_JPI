@@ -1,6 +1,6 @@
 ---
 title: "Track-a-cohort: figures"
-output: 
+output:
   html_document:
     code_folding: hide
     theme: sandstone
@@ -24,7 +24,6 @@ library(ggrepel) #for ggplot labels
 library(xts) #NB code to import STARs data
 library(patchwork) #arrange plots
 
-#“lumen”, “paper”, “readable”, “sandstone”, “simplex”, “spacelab”, “united”, “yeti”
 ```
 
 
