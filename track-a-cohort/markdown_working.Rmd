@@ -44,8 +44,10 @@ library(xts) #NB code to import STARs data
 
 **Current figures**
 
-## Figure 2. STARS Model Estimates 
+## Figure 2. 
 
+
+### STARS Delta Survival
 ```{r stars_shared_code, eval = FALSE, include=FALSE}
 #these steps will adjust with NB's help sourcing all years of data to plot figure
 
@@ -87,7 +89,7 @@ stars_graph_surv <- ggplot(stars, mapping = aes(x = wDay)) +
     geom_line(stars, mapping = aes(y = surv), color = 'steelblue2', linewidth = 1) +
   # geom_ribbon(stars, mapping = aes(ymin = survL80, ymax = survU80), fill = 'steelblue2', alpha = 0.5) + 
   facet_grid(WY~.) +
-  labs(x = 'Date', y = 'Probability', title = 'STARS Total Survival') +
+  labs(x = 'Date', y = 'Probability', title = NULL) +
   scale_x_continuous(breaks = c(1,62,124,183,244), labels = c('Oct', 'Dec', 'Feb', 'Apr', 'Jun'), limits = c(0,272)) +
   theme(legend.position = 'none',
         plot.margin = margin(0.5,0.5,0.25,0.25, unit = 'cm'),
@@ -131,7 +133,7 @@ load(here::here("track-a-cohort/STARS.shinyinputs.Rdata")) #COB removed verbose=
 # print(head(index(WR_xts)))
 
 # Subset the data and convert to tibble
-df_stars <- as_tibble(WR_xts[,c("Survival Interior Delta Est", 
+df_stars_raw <- as_tibble(WR_xts[,c("Survival Interior Delta Est", 
                                 "Survival Interior Delta LCL 80", 
                                 "Survival Interior Delta UCL 80",
                                 "Routing Probability Interior Delta Est",    
@@ -156,10 +158,6 @@ df_stars <- as_tibble(WR_xts[,c("Survival Interior Delta Est",
          wDate = if_else(month(date) >= 10, date + years(1), date)) 
 
 
-#get hydrological classification table
-
-  
-
 #If wanting late_fall 
 # print(colnames(RSM_xts)) # latefalls are different
 # 
@@ -167,17 +165,42 @@ df_stars <- as_tibble(WR_xts[,c("Survival Interior Delta Est",
 # write_csv(LFwant,"LF.stars.csv")
 ```
 
+```{r append_hydro_year, include=FALSE}
+#pull in shared wytype.csv-- look to automate this process (in progress MC^2)
+wytype <- read_csv(here::here('track-a-cohort/shared files/WYtype.csv')) %>% filter(Basin == "SacramentoValley")
+
+df_stars<-df_stars_raw %>% 
+  inner_join(select(wytype, WY, hydro_type = `Yr-type`), by = "WY") %>% 
+  mutate( hydro_type = factor(hydro_type, levels = c("W", "AN", "BN", "D", "C"), labels = c("Wet", "Above Normal", "Below Normal", "Dry", "Critical")))
+  
+
+```
+
+
 ```{r p_base_stars_total_survival, eval = FALSE, include=FALSE}
-p_stars_total_survival <- ggplot(df_stars, aes(x = wDay, group = WY, color = yr_type)) +
+
+
+color_gradient <- colorRampPalette(c("cadetblue3", "brown"))(length(unique(wytype$`Yr-type`)))
+
+# Define all possible levels of hydro_type
+all_levels <- c("Wet", "AboveNormal", "BelowNormal", "Dry", "Critical")
+
+# Create a color palette that includes all possible levels
+color_palette <- setNames(c("darkblue", "cadetblue", "honeydew3", "navajowhite3", "salmon4"), all_levels)
+
+
+p_stars_total_survival <- ggplot(df_stars, aes(x = wDay, group = WY, color =hydro_type)) +
   geom_line(aes(y = surv)) +
   labs(x = 'Date (based on water year)', 
        y = 'Apparent survival probability', 
        title = 'STARS Overall Survival', 
        caption = "The solid line shows median survival of daily cohorts of winter run Chinook Salmon through the Delta from Knights Landing to Chipps Island for all routes combined.") +
+    scale_color_manual(values = color_palette, drop = FALSE)+
   # scale_x_continuous(breaks = seq(1, 365, by = 30), labels = date_to_month(wDate)) +
   gghighlight() +
-  facet_wrap(~ WY) +
+  facet_wrap(hydro_type~  WY) +
   geom_ribbon(aes(ymin = survL80, ymax = survU80), alpha = 0.5) +
+
   theme_minimal()
 
 p_stars_total_survival
@@ -290,7 +313,6 @@ fct_stars_survival_plot(data = df_stars, x_var = "wDay", year = "WY", metric = "
 fct_stars_survival_plot(data = df_stars, x_var = "wDay", year = "WY", metric = "idsurv")
 fct_stars_survival_plot(data = df_stars, x_var = "wDay", year = "WY", metric = "surv")
 
-fct_stars_survival_plot(data = df_stars, x_var = "doy", year = "CY", metric = "idRoute")
 
 ```
 
@@ -331,7 +353,7 @@ df_loss <- loss.wch %>% select(Sample.Time, Facility, LAD.Race, DNA.Race, Length
          wDate = if_else(month(Date) >= 10, Date + years(1), Date))
 ```
 
-### Figure 3a. JPE percent loss
+### Figure 3a. JPE percent loss {-}
 
 ```{r p_jpe_genetic_loss_pct, fig.width=10, echo = FALSE, warning = FALSE, message=FALSE}
 #pull in JPES and genetic loss data
