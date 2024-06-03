@@ -1,0 +1,302 @@
+---
+title: "Juvenile Production Index (JPI) at Red Bluff Diversion Dam (RBDD) on the Sacramento River, California"
+subtitle: "Prepared for assistance with generating USFWS Biweekly Reports & Annual Reports"
+date: "Last update: `r format(Sys.Date())`"
+# author: "SacPAS"
+format: 
+  html: 
+    embed-resources: TRUE
+    code-fold: TRUE
+    code-tools: 
+      source: TRUE 
+      toggle: FALSE
+      caption: none
+editor: visual
+# output: 
+#   html_document:
+#   css: assets/rany_style.css
+#   code_folding: hide
+df_print: paged
+highlight: tango
+theme: cosmo
+toc: TRUE
+toc_float: TRUE
+collapsed: TRUE
+number_sections: TRUE
+---
+
+## Packages {.hidden .unlisted}
+
+```{r, include=FALSE, warning=FALSE, message=FALSE, error=FALSE}
+library(here)
+library(tidyverse)
+library(lubridate)
+library(hms)
+library(EDIutils)
+```
+
+## Functions and options {.hidden .unlisted}
+
+```{r, include=FALSE, warning=FALSE, message=FALSE, error=FALSE}
+mean_na <- function(x) {mean(na.omit(x))}
+options(tibble.width = Inf)
+```
+
+## Background
+
+The United States Fish and Wildlife Service (USFWS) has conducted direct monitoring of juvenile Chinook salmon (*Oncorhynchus tshawytscha*) passage at Red Bluff Diversion Dam (RBDD) river kilometer (rkm) 391 on the Sacramento River, California since 1994 (Johnson and Martin 1997). Absolute abundance (production and passage) estimates are determined from rotary screw trap (RST) samples and quantitative methods developed by Martin *et al.* (2001). Below is an account of the methods, data, and estimates.
+
+## Data
+
+There are five data sets in the USFWS Red Bluff Diversion Dam Rotary Screw Trap Juvenile Fish Monitoring Database:
+
+-   **trap data**: daily trap operations and environmental data
+
+-   **catch data**: daily catch data
+
+-   **release data**: release trial overview data
+
+-   **release fish data**: individual data on released fish
+
+-   **recapture data**: recaptured catch from efficiency trials
+
+\vspace{4em}
+
+### Data retrieval
+
+Download data sets from EDI Data Portal: <https://portal.edirepository.org/nis/mapbrowse?scope=edi&identifier=1365&revision=10>
+
+```{r, echo=TRUE, include=TRUE, warning=FALSE, message=FALSE, error=FALSE}
+res <- read_data_entity_names(packageId = "edi.1365.10")
+res
+
+trap_raw <- read_data_entity(packageId = "edi.1365.10", entityId = res$entityId[2])
+trap_data <- readr::read_csv(file = trap_raw)
+# names(trap_data)
+# str(trap_data)
+
+catch_raw <- read_data_entity(packageId = "edi.1365.10", entityId = res$entityId[1])
+catch_data <- readr::read_csv(file = catch_raw)
+# names(catch_data)
+# str(catch_data)
+
+release_raw <- read_data_entity(packageId = "edi.1365.10", entityId = res$entityId[4])
+release_data <- readr::read_csv(file = release_raw)
+# names(release_data)
+# str(release_data)
+
+release_fish_raw <- read_data_entity(packageId = "edi.1365.10", entityId = res$entityId[5])
+release_fish_data <- readr::read_csv(file = release_fish_raw)
+# names(release_fish_data)
+# str(release_fish_data)
+
+recapture_raw <- read_data_entity(packageId = "edi.1365.10", entityId = res$entityId[3])
+recapture_data <- readr::read_csv(file = recapture_raw)
+# names(recapture_data)
+# str(recapture_data)
+```
+
+\vspace{4em}
+
+#### Manual corrections to the data
+
+Note to self/selves: some things we'll need to revisit and correct for automation.
+
+```{r}
+# QC data; remove rows with negative volumes
+trap_data <- trap_data[-which(trap_data$volume<0),]
+
+# Correct values in release_data$excluded, which is a logic, but loads as NAs
+release_data$excluded <- FALSE
+release_data$excluded[which(release_data$trial_id %in% c("115", "2", "9"))] <- TRUE
+release_data$excluded[which(release_data$trial_id=="215" & release_data$mark_date=="2015-01-27")] <- TRUE
+# more corrections needed because some trial_id's are missing 0 at the beginning, even with the ' character in the csv file
+```
+
+\vspace{4em}
+
+#### Length-at-Date (LAD) criteria
+
+Run assignments for Chinook salmon are determined by fork length and date of passage (Johnson et al. 1992).
+
+```{r}
+# placer
+# where to have the file for upload?
+```
+
+\vspace{4em}
+
+### Data wrangling
+
+Add year, month, day, doy columns to data sets.
+
+```{r}
+# Date class assignments to relevant data
+
+# trap data from EDI
+trap_data <- trap_data %>% 
+  mutate(start_date = ymd(start_date)) %>%
+  mutate(year = year(start_date)) %>%
+  mutate(month = month(start_date)) %>%
+  mutate(day = day(start_date)) %>%
+  mutate(doy = yday(start_date))
+
+# Catch data from EDI
+catch_data <- catch_data %>% 
+  mutate(start_date = ymd(start_date)) %>%
+  mutate(year = year(start_date)) %>%
+  mutate(month = month(start_date)) %>%
+  mutate(day = day(start_date)) %>%
+  mutate(doy = yday(start_date))
+
+# Recapture data from EDI
+recapture_data <- recapture_data %>% 
+  mutate(sample_date = ymd(sample_date)) %>%
+  mutate(year = year(sample_date)) %>%
+  mutate(month = month(sample_date)) %>%
+  mutate(day = day(sample_date)) %>%
+  mutate(doy = yday(sample_date))
+
+# Release data from EDI
+release_data <- release_data %>% 
+  mutate(release_date = ymd(release_date)) %>%
+  mutate(year = year(release_date)) %>%
+  mutate(month = month(release_date)) %>%
+  mutate(day = day(release_date)) %>%
+  mutate(doy = yday(release_date))
+
+# Use sample_id to identify sample_id_date
+trap_data$sample_id_doy <- as.numeric(substr(trap_data$sample_id, 1, (nchar(trap_data$sample_id)-3)))
+# convert day-of-year and year info to a date
+trap_data$sample_id_date_decimal <- ifelse(leap_year(trap_data$year), 
+                                           trap_data$year + trap_data$sample_id_doy/366,
+                                           trap_data$year + trap_data$sample_id_doy/365)
+
+trap_data$sample_id_date <- date_decimal(trap_data$sample_id_date_decimal)
+trap_data$sample_id_date <- ymd(substr(trap_data$sample_id_date, 1, 10))
+# determine which ones had different sample_id naming convention
+counter <- which (is.na(trap_data$sample_id_doy)==TRUE)
+# manually enter these sample dates
+```
+
+##### Display some of trap_data
+
+```{r}
+tail(trap_data)
+```
+
+## Analysis, Estimates and Figures
+
+### Biweekly reporting
+
+#### Flow estimates past RBDD
+
+```{r, echo=TRUE, include=TRUE, warning=FALSE, message=FALSE, error=FALSE}
+
+# flow; Q_d at RBDD
+# Create a table: Date | SID | Week| RBDD_flow_init | CC_diverted_flow | TC_diverted_flow | RBDD_flow_final_cfs | RBDD_flow_final_af
+
+# hourly flow data at BND 
+# starting at 0800 of day prior to sampling
+# ending at 0700 on the day of sampling
+# daily average calculated from these hourly data
+
+# ??? Get BND flow data via real-time query (from SacPAS)? Subtract diversions from TNNC?
+# For now, in the interim, use a flat file of the BND hourly flow data
+# "h" was added at the beginning of column names with hours, so it can be read into R, 
+# and keep column names the same
+BND_flow_cfs <- read_csv(here("JPI_convert_to_Rcode/data", "BND_hourly_flow_data_2023.csv"))
+BND_flow_cfs <- BND_flow_cfs %>% 
+  mutate(Date = mdy(Date))
+
+# How to get the CC- and TC-diverted flows? From USFWS, who get it from TNNC?
+# For now, in the interim, use a flat file of the CC- and TC-diverted daily flows
+diverted_flow_cfs <- read_csv(here("JPI_convert_to_Rcode/data", "CC_TC_diverted_flow_2023.csv"))
+diverted_flow_cfs <- diverted_flow_cfs %>% 
+  mutate(Date = mdy(Date))
+
+# RBDD adjusted flow calculated from mean BND flow minus diverted flow data
+# Probably want to have a rule about how much missing data is okay for a daily mean
+# It seems like USFWS is okay with 2 hours of missing data based on what's in their file for 2024
+# It seems like USFWS fills in missing hourly data with other hours of data, 
+# but I have not yet looked into exactly what rules they follow; 
+# needed fro reproducible workflow
+RBDD_flow <- tibble(BND_flow_cfs[,1],          # SID
+                    diverted_flow_cfs[,3],     # Week
+                    BND_flow_cfs[,2],          # Date
+                    BND_mean_flow = apply(BND_flow_cfs[,-(1:2)], MARGIN = 1, FUN = mean_na)) 
+RBDD_flow <- inner_join(RBDD_flow, diverted_flow_cfs, by=c("SID", "Week", "Date"))
+RBDD_flow$RBDD_flow_cfs <- RBDD_flow$BND_mean_flow - RBDD_flow$CC_diverted_flow_cfs - RBDD_flow$TC_diverted_flow_cfs
+
+# Calculate Qd in acre ft / day
+# cfs converted to acre_ft_per_day
+# 86400 seconds in a day
+# 43560 cf in 1 acre_ft
+RBDD_flow$RBDD_Qd_acft <- (RBDD_flow$RBDD_flow_cfs*60*60*24) / 43560
+RBDD_flow$sample_id_date <- RBDD_flow$Date
+
+# ??? Get RBDD flow data from NOAA?
+# Try a side-by-side comparison with current method using BND and diverted flows
+# https://www.cnrfc.noaa.gov/graphicalRVF.php?id=RDBC1 
+```
+
+##### Display some of RBDD_flow
+
+```{r}
+tail(RBDD_flow)
+```
+
+#### Daily estimate of trap volume Xd, RBDD flow Qd, and % Qd
+
+```{r}
+# Xd 
+# standardize volume to a full day using the sampling_weight
+trap_data$volume_day <- trap_data$volume / trap_data$sampling_weight
+# determine volume sampled per day across traps and multiple samples on same day
+sample_id_aggr <- aggregate(volume_day ~ sample_id + sample_id_date, data=trap_data, FUN=sum)
+# convert daily volume sampled in cfs to acre feet
+sample_id_aggr$Xd_acft <- sample_id_aggr$volume/43560
+
+# standardize volume to a full day using the sampling_weight
+trap_data$volume_day <- trap_data$volume / trap_data$sampling_weight
+# determine volume sampled per day across traps and multiple samples on same day
+sample_id_aggr <- aggregate(volume_day ~ sample_id + sample_id_date, data=trap_data, FUN=sum)
+# convert daily volume sampled in cfs to acre feet
+sample_id_aggr$Xd_acft <- sample_id_aggr$volume/43560
+
+# merged RBDD flow data Qd to daily aggregated table
+sample_id_aggr <- merge(sample_id_aggr, RBDD_flow[,c("sample_id_date", "RBDD_Qd_acft")])
+
+# perc_Qd in acre feet per day
+sample_id_aggr$perc_Qd_acft <- sample_id_aggr$Xd_acft / sample_id_aggr$RBDD_Qd_acft
+```
+
+##### Display some of daily aggregated trap volume data
+
+```{r}
+tail(sample_id_aggr)
+```
+
+daily trap efficiency Td *(in progress)*
+
+daily total passage Pd *(in progress)*
+
+biweekly estimates with 90% CI *(to copy over from existing files of USFWS)*
+
+### Annual reporting
+
+```{r, echo=TRUE, include=TRUE, warning=FALSE, message=FALSE, error=FALSE}
+
+### STILL IN PROGRESS
+
+```
+
+Td *(in progress)*
+
+Week \| Sampling effort \| Fry Est. passage \| Fry Med FL \| Pre-smolt/smolts Est. passage \| Pre-smolts/smolts Med FL \| Total Est. passage \| Total Med FL \| Fre-equivelent JPI *(table to be created; in progress)*
+
+## References
+
+Martin, CD, PD Gaines, and RR Johnson. 2001. Estimating the abundance of Sacramento River juvenile winter Chinook Salmon with comparisons to adult escpaement. Red Bluff Research Pumping Plant Report Series, Volume 5. U.S. Fish and Wildlife Service, Red Bluff, CA.
+
+Johnson, RR, DC Weigand, and FW Fisher. 1992. Use of growth data to determine the spatial and temporal distribution of four runs of juvenile chinook salmon in the Sacramento River, CA. USFWS Report \# AFF1-FRO-92-15. November 1992. 18 pp.
