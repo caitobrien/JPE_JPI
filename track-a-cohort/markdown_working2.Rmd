@@ -40,13 +40,15 @@ Susannah to prepare data for this figure.
 ```{r}
 jpe.url<- "https://www.cbr.washington.edu/sacramento/data/graphics/jpedata_Natural_1.txt"
 
-jpe<-data.table::fread(jpe.url)
+jpe.raw <- data.table::fread(jpe.url) 
+jpe <- jpe.raw %>% 
+  mutate(method = str_replace(references_contributors, "Method 2 .*", "Method 2 (O'Farrell et al., 2018)")) %>% 
+    mutate(WY = brood_year + 1) 
 
 
 
 jpe_annual<- jpe %>% 
-  mutate(brood_year = as.factor(brood_year),
-         method = str_replace(references_contributors, "Method 2 .*", "Method 2 (O'Farrell et al., 2018)")) %>% 
+  mutate(brood_year = as.factor(brood_year)) %>% 
   ggplot( aes(x=brood_year, y=value, fill = method))+
   geom_bar(stat = "identity")+
   geom_errorbar(aes(ymin = lower_95_CI, ymax =upper_95_CI), width = 0.25)+
@@ -70,77 +72,6 @@ jpe_annual
 
 ## Figure 2. STARS Delta Survival
 
-
-```{r stars_shared_code, eval = FALSE, include=FALSE}
-#these steps will adjust with NB's help sourcing all years of data to plot figure
-
-#load files--each represents a year of data sourced fom STARS shiny app
-files <- list.files(path = here::here('track-a-cohort/shared files/STARS/'))
-
-#convert calendar year to water year via function shared in .rda file--changed to use lubridate
-# waterDay <- function(x, start.month = 10L){
-#   start.yr = as.integer(format(as.POSIXlt(x), format="%Y")) - 
-#     (format(as.POSIXlt(x), format="%m") < start.month)
-#   start.date = as.Date(format(ISOdate(
-#     year=start.yr, month=start.month, day=1L), format="%Y-%m-%d"))
-#   as.integer(x - start.date + 1L)
-# }
-
-waterDay <- function(x, start.month = 10L){
-  start.yr <- year(x) - (month(x) < start.month)
-  start.date <- as.Date(paste0(start.yr, "-", start.month, "-01"))
-  as.integer(x - start.date + 1L)
-}
-
-#read in files, bind rows, select columns, arrange by date, convert to water year
-stars <- read_csv(here::here(paste0('track-a-cohort/shared files/STARS/',files))) %>% bind_rows() %>%
-  select(1, surv = 2, survL80 = 3, survU80 = 4, idsurv = 17, idsurvL80 = 18, idsurvU80 = 19, idRoute = 32, idRouteL80 = 33, idRouteU80 = 34) %>% arrange(Date) %>%
-  mutate(WY = year(Date) + (month(Date) >= 10)) %>% 
-  mutate(wDay = waterDay(Date),
-         doy = yday(Date), #added doy/CY for possible shiny app function 
-         CY = year(Date),
-         wDate = as.Date(paste0(WY, '-', wDay), format = '%Y-%j'))
-
-#shared plot 
-
-##used a subsample of dataset 
-stars2 <- stars %>% select(12,Group = 11,2:10)
-
-
-stars_graph_surv <- ggplot(stars, mapping = aes(x = wDay)) + 
-  # geom_line(stars2, mapping = aes(y = surv, group = Group), color = 'grey', linewidth = .5) + 
-    geom_line(stars, mapping = aes(y = surv), color = 'steelblue2', linewidth = 1) +
-  # geom_ribbon(stars, mapping = aes(ymin = survL80, ymax = survU80), fill = 'steelblue2', alpha = 0.5) + 
-  facet_grid(WY~.) +
-  labs(x = 'Date', y = 'Probability', title = NULL) +
-  scale_x_continuous(breaks = c(1,62,124,183,244), labels = c('Oct', 'Dec', 'Feb', 'Apr', 'Jun'), limits = c(0,272)) +
-  theme(legend.position = 'none',
-        plot.margin = margin(0.5,0.5,0.25,0.25, unit = 'cm'),
-        axis.title.x = element_text(margin=margin(t=10)),
-        axis.title.y = element_text(margin=margin(r=10)),
-        title = element_text(size = 10))
-stars_graph_surv
-```
-
-
-```{r import_stars_data, eval = FALSE, include=FALSE}
-##alternative method--base plot
-
-#load files--each represents a year of data sourced fom STARS shiny app
-files <- list.files(path = here::here('track-a-cohort/shared files/STARS/'))
-
-#alternative wrangling code -- no waterdate fct
-df_stars<-read_csv(here::here(paste0('track-a-cohort/shared files/STARS/',files))) %>% 
-  bind_rows() %>% 
-  select(1, surv = 2, survL80 = 3, survU80 = 4, idsurv = 17, idsurvL80 = 18, idsurvU80 = 19, idRoute = 32, idRouteL80 = 33, idRouteU80 = 34) %>% 
-  arrange(Date) %>% 
-  mutate(WY = year(Date) + (month(Date) >= 10),
-         wDay = if_else(month(Date) >= 10, yday(Date) - 273, yday(Date) + 92),
-         doy = yday(Date),
-         CY = year(Date),
-         wDate = if_else(month(Date) >= 10, Date + years(1), Date))
-```
-   
 ```{r import_stars_data_NB shared code, include=FALSE}
 
 
@@ -182,15 +113,6 @@ df_stars_raw <- as_tibble(WR_xts[,c("Survival Interior Delta Est",
 
 #skip hydro additions for now
 df_stars<-df_stars_raw
-```
-
-```{r append_hydro_year, eval=FALSE, include=FALSE}
-#pull in shared wytype.csv-- look to automate this process (in progress MC^2)
-wytype <- read_csv(here::here('track-a-cohort/shared files/WYtype.csv')) %>% filter(Basin == "SacramentoValley")
-
-df_stars<-df_stars_raw %>% 
-  inner_join(select(wytype, WY, hydro_type = `Yr-type`), by = "WY") %>% 
-  mutate( hydro_type = factor(hydro_type, levels = c("W", "AN", "BN", "D", "C"), labels = c("Wet", "Above Normal", "Below Normal", "Dry", "Critical")))
 ```
 
 
@@ -272,13 +194,13 @@ p_stars_route_probability <- ggplot(df_stars, aes(x = wDay, group = WY)) +
 ```
 
  
-```{r combine_plots, fig.height=15, fig.width=10}
+```{r combine_plots, fig.height=12, fig.width=12}
 p_stars <- p_stars_overall_survival / (p_stars_int_survival + p_stars_route_probability)
 
 
 p_stars <- p_stars +  
   plot_annotation(title = "STARS Model - Predicted Winter Run Chinook Salmon daily cohorts passage from Knights Landing to Chipps Island",
-                  caption = "Years of data: 2018 to 2024 Data source: STARS Shiny App")
+                  caption = "Data source: STARS Shiny App, Years of data: 2018 to 2024")
 
 p_stars
 ```
@@ -488,7 +410,7 @@ loss.wch <- read.csv(url) %>%
   filter(LAD.Race == 'Winter'| DNA.Race == 'Winter') 
   
 #adjust imported loss to WY 
-df_loss <- loss.wch %>% select(Sample.Time, Facility, LAD.Race, DNA.Race, Length, nfish, Expanded.Salvage, Loss) %>%
+df_loss <- loss.wch %>% select(Sample.Time, Facility, LAD.Race, DNA.Race,nfish, Loss) %>%
   mutate(Date = as.Date(Sample.Time)) %>%
   arrange(Date) %>%
   mutate(WY = year(Date) + (month(Date) >= 10),
@@ -502,39 +424,55 @@ df_ladloss_sum<-df_loss %>%
   filter(LAD.Race == "Winter") %>% 
   group_by(WY) %>% 
   summarise( nfish = sum (nfish),
-             nloss = sum(Loss),
-             nsalvage = sum(Expanded.Salvage))%>% 
+             nloss = sum(Loss)
+             )%>% 
   mutate(losstype = "LAD")
 
 df_dnaloss_sum<-df_loss %>% 
   filter(DNA.Race == "Winter") %>% 
   group_by(WY) %>% 
   summarise( nfish = sum (nfish),
-             nloss = sum(Loss),
-             nsalvage = sum(Expanded.Salvage)) %>% 
+             nloss = sum(Loss)
+             ) %>% 
   mutate(losstype = "DNA")
 
 df_loss_sum <-rbind(df_ladloss_sum, df_dnaloss_sum)
 
-#import JPE estimates
-jpe_url<- "https://www.cbr.washington.edu/sacramento/data/graphics/jpedata_Natural_1.txt"
-#assign WY for each letter (one year ahead of broodyear)
-df_jpe<-read.csv(jpe_url, sep = "|") %>% 
-  mutate(WY = brood_year + 1)
 
 #join JPE totals with loss
-df_jpe_loss_sum <- df_loss_sum %>% 
-  inner_join(select(df_jpe,WY,brood_year, "method" = references_contributors,  "JPE" = value ), by = "WY" ) %>% 
-  mutate(method = str_replace(method, "Method 2 .*", "Method 2 (O'Farrell et al., 2018)"))
+df_jpe_loss_sum <-  jpe %>% 
+  # mutate(WY = brood_year + 1) %>% 
+  select(WY, brood_year, method, value ) %>% 
+  inner_join(df_loss_sum, by = "WY") 
+  
 
 df_pct_jpe_loss_sum<-df_jpe_loss_sum %>% 
   group_by(WY, losstype) %>% 
-  mutate(pctloss = (nloss/JPE))
+  mutate(pctloss = (nloss/value))
+
+  # ggplot(data=df_pct_jpe_loss_sum, aes(x=as.factor(brood_year), y= pctloss, fill=losstype)) +
+  # geom_bar(stat="identity", position=position_dodge())+
+  # labs(title = "Genetic vs Length-At-Date (LAD) Historical Percent Loss of the JPE\n")+
+  # labs(x = "Brood Year",
+  #      y = "Percent of the JPE Lost", #change title
+  #      fill = NULL) +
+  # scale_y_continuous(breaks = seq(0, 6, by = 2), limits = c(0, 6), expand = c(0, 0))+
+  # scale_fill_manual(values = c("black", "grey"),
+  #                   labels = c("Genetic", "LAD"))+
+  # theme_minimal() +
+  #   theme(legend.position = c(.9,.65),
+  #         axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5),
+  #         panel.grid.major.x = element_blank(),
+  #         axis.line.x = element_line(color = "black", .5),
+  #         axis.ticks.x = element_line(color = "black"),
+  #         text = element_text(size = 15))
 ```
 
 
 ```{r import_loss_data, include=FALSE}
 
+#pull in shared wytype.csv-- look to automate this process (in progress MC^2)
+wytype <- read_csv(here::here('track-a-cohort/shared files/WYtype.csv')) %>% filter(Basin == "SacramentoValley")
 
 
 #Further filter to only plot winter-run chinook for LAD
@@ -546,17 +484,26 @@ cumulativeLAD <- df_loss %>% filter(LAD.Race == 'Winter') %>% group_by(WY) %>%
   #set order of factor levels
   mutate(Status = factor(Status, levels = c('Pre-2009 BiOp\n(1994 to 2008)', '2009 & 2019 BiOp\n(2009 to present)'))) %>% 
   #join with wytype to designate wet/dry year (Hydrologic Classification Index?)
-  left_join(select(wytype,WY, "hydro_type" = Yr.type) , by = 'WY') %>%
+  left_join(select(wytype,WY, "hydro_type" = `Yr-type`) , by = 'WY') %>%
   #remove date na's
   filter(!is.na(Date)) %>%
   # #label historical versus current year
   # mutate(History = if_else(WY == '2024', 'Current', 'Past')) %>%
   #relabel wytype Yr.type to Wet/Dry -- add all?
-  mutate( hydro_type = factor(hydro_type, levels = c("W", "AN", "BN", "D", "C"), labels = c("Wet", "Above Normal", "Below Normal", "Dry", "Critical")))
+  mutate( hydro_type = factor(hydro_type, levels = c("W", "AN", "BN", "D", "C"), labels = c("Wet", "Above Normal", "Below Normal", "Dry", "Critical")),
+          hydro_type_grp = case_when(
+                                      hydro_type %in% c("Wet", "Above Normal") ~ "Wet, Above Normal",
+                                      hydro_type %in% c("Below Normal", "Dry", "Critical") ~ "Below Normal, Dry, & Critical" )
+          )
 
+pct_cumloss<-cumulativeLAD %>% 
+  group_by(WY, wDay, hydro_type_grp) %>% 
+  summarise(cumloss = max(cumloss)) %>% 
+  inner_join(select(jpe,WY, value), by = "WY") %>% 
+  mutate(pct_cumloss = cumloss/value)
 ```
 
-### Figure 3a. JPE percent loss {-}
+### Figure 3a. JPE percent loss - bar plot {-}
 
 ```{r p_jpe_genetic_loss_pct, fig.width=10, echo = FALSE, warning = FALSE, message=FALSE}
 #pull in JPES and genetic loss data
@@ -592,8 +539,44 @@ p_jpe_genetic_lad_barplot <-
 p_jpe_genetic_lad_barplot
 ```
 
-### Figure 3b. Cumulative Loss {-}
+### Figure 3b. Cumulative percent Loss {-}
 
+```{r p_fig3a_all_years, echo=FALSE, message=FALSE, warning=FALSE, fig.height=8, fig.width=10}
+#plot
+
+# #set function to 2024?
+# day_to_month <- function(day) {
+#   month <- as.Date(paste(2024, day), format = "%Y %j") %>% format("%b")
+#   return(month)
+# }
+
+
+#plot all years together  
+cumulativeLAD %>% 
+ ggplot() +
+  geom_line( data = subset(cumulativeLAD, WY != 2024), aes(x=wDay, y = cumloss, group = WY, color = hydro_type_grp ), lwd = .25)+
+  geom_line( data = subset(cumulativeLAD, WY == 2024), aes( x=wDay, y = cumloss, group = WY, linetype = as.factor(WY)), color = "black", lwd = 1)+
+  labs(x = 'Date', 
+       y = 'Cumulative Loss', 
+       title = 'Winter-run Chinook salmon - Current and Historical Cumulative Salvage',
+       subtitle = " Data includes: WY1994 to WY2024",
+       color = "Hydrological Year Type:",
+       linetype = "Current Water Year:") +
+  scale_x_continuous(breaks = c(93,152,213,274), labels = c('Jan', 'Mar', 'May', 'Jul')) +
+  scale_y_continuous(breaks = seq(0, 20000, by = 5000), limits = c(0, 20000), expand = c(0, 0))+
+  scale_color_manual(values = c("brown", "cadetblue3", "grey"), 
+                     labels = c("Below Normal, Dry, & Critical", "Wet, Above Normal", "WY2023"))+
+  guides(linetype = guide_legend(order = 1), color = guide_legend(order = 2)) +
+  theme_minimal() +
+  theme(legend.position = "right",
+        panel.grid.major.x = element_blank(), 
+        axis.line.x = element_line(color = "black", .5),
+        axis.line.y = element_line(color = "black", .5),
+        axis.ticks.x = element_line(color = "black"), 
+        text = element_text(size = 15))
+
+
+```
 
 ---
 
