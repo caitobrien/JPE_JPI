@@ -1,5 +1,6 @@
 ---
 title: "Track-a-cohort: Figures"
+sutitle: "Winter-run Chinook Salmon"
 output: 
   html_document:
     code_folding: hide
