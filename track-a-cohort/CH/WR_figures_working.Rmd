@@ -30,6 +30,7 @@ library(plotly) #for interactive plots
 library(ggrepel) #for ggplot labels
 library(xts) #NB code to import STARs data
 library(patchwork) #for combining plots
+library(data.table)
 ```
 
 
