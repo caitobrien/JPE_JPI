@@ -1,0 +1,753 @@
+---
+title: "Track-a-cohort: Figures"
+output: 
+  html_document:
+    code_folding: hide
+date: "Updated: 2024-06-12"
+---
+
+#  {.tabset}
+
+**Background**
+
+Objective: Using shared resources via [BDO github](https://github.com/BDO-Science/track-a-cohort) from BOR, replicate figures and adjust to include dynamic data. See 
+[Track a cohort_WR_plots.docx](https://github.com/BDO-Science/track-a-cohort/blob/main/Track%20a%20Cohort_WR_plots.docx) for figures requested. Also consider future additions including more interactive capabilities to certain graphs in form of Rmarkdown and/or shinyapp
+
+Issues: 
+
+- For all figures -- confirm method used to assign month to plots based on wDay. 
+
+- Update naming to improve accuracy
+
+- update data sources
+
+```{r load_libraries, include=FALSE, warning=FALSE, message=FALSE}
+library(here) #to designate file pathways
+library(tidyverse) #data manipulation, includes pkgs such as lubridate and ggplot
+library(gghighlight) #for stars plot- highlight certain years
+library(plotly) #for interactive plots
+library(ggrepel) #for ggplot labels
+library(xts) #NB code to import STARs data
+library(patchwork) #for combining plots
+```
+
+
+**Current figures**
+
+## Figure 1. JPE Estimate
+
+Susannah to prepare data for this figure. 
+```{r, warning=FALSE}
+jpe.url<- "https://www.cbr.washington.edu/sacramento/data/graphics/jpedata_Natural_1.txt"
+
+jpe.raw <- data.table::fread(jpe.url) 
+jpe <- jpe.raw %>% 
+  mutate(method = str_replace(references_contributors, "Method 2 .*", "Method 2 (O'Farrell et al., 2018)")) %>% 
+    mutate(WY = brood_year + 1) 
+
+
+
+jpe_annual<- jpe %>% 
+  mutate(brood_year = as.factor(brood_year)) %>% 
+  ggplot( aes(x=brood_year, y=value, fill = method))+
+  geom_bar(stat = "identity")+
+  geom_errorbar(aes(ymin = lower_95_CI, ymax =upper_95_CI), width = 0.25)+
+  labs(title = "Juvenile Production Estimate (JPE) Winter-run Chinook",
+       subtitle = "Natural-origin: Total natural production entering the Delta",
+       x = "Brood year", 
+       y = "Total number of juvenile fish", 
+       fill = "JPE Method")+
+   scale_y_continuous( labels= scales::comma, expand = expansion(mult = c(0, 0.05))) +  # Set the lower limit of the y-axis to 0
+  scale_fill_manual(values = c("NA" = "grey80", "Method 2 (O'Farrell et al., 2018)" = "grey30"))+
+  theme_minimal() +
+  theme(legend.position = c(0.8, 0.8),
+        axis.text.x = element_text(angle = 90, vjust = .5, hjust = 1), 
+        axis.line = element_line(colour = "grey", linewidth = .25), 
+        panel.grid.minor.x = element_blank(),
+         panel.grid.major.x  = element_blank())
+jpe_annual
+
+```
+
+
+## Figure 2. STARS Delta Survival
+
+```{r import_stars_data_NB shared code, include=FALSE}
+
+
+# grab.stars.R
+# Caitlin request
+# COPY/MOVE or link to file:
+ # /var/httpd/www/shiny/apps/STARS/STARS.shinyinputs.Rdata
+# heads up, this object has class: "xts" and "zoo"
+
+load(here::here("track-a-cohort/CH/STARS.shinyinputs.Rdata")) #COB removed verbose=T to run with here::here
+
+# print(colnames(WR_xts))
+# print(head(index(WR_xts)))
+
+# Subset the data and convert to tibble
+df_stars_raw <- as_tibble(WR_xts[,c("Survival Interior Delta Est", 
+                                "Survival Interior Delta LCL 80", 
+                                "Survival Interior Delta UCL 80",
+                                "Routing Probability Interior Delta Est",    
+                                "Routing Probability Interior Delta LCL 80",
+                                "Routing Probability Interior Delta UCL 80",
+                                "Survival Overall Est", 
+                                "Survival Overall LCL 80",
+                                "Survival Overall UCL 80")]) %>%
+  # Add the first date as a new column
+  mutate(date = index(WR_xts)) %>%
+  # Make date the first column
+  select(date, everything()) %>%
+  rename( surv =  "Survival Overall Est", survL80 =  "Survival Overall LCL 80", survU80 =  "Survival Overall UCL 80", 
+          idsurv = "Survival Interior Delta Est", idsurvL80 = "Survival Interior Delta LCL 80", idsurvU80 = "Survival Interior Delta UCL 80", 
+          idRoute = "Routing Probability Interior Delta Est", idRouteL80 =  "Routing Probability Interior Delta LCL 80", idRouteU80 =  "Routing Probability Interior Delta UCL 80") %>%
+  # convert date to WY, wday
+  arrange(date) %>% 
+  mutate(WY = year(date) + (month(date) >= 10),
+         wDay = if_else(month(date) >= 10, yday(date) - 273, yday(date) + 92),
+         doy = yday(date),
+         CY = year(date),
+         wDate = if_else(month(date) >= 10, date + years(1), date)) 
+
+#skip hydro additions for now
+df_stars<-df_stars_raw
+```
+
+
+```{r convert_wday_month, include=FALSE}
+
+#reference for how wday was calculated
+# wDay = if_else(month(Date) >= 10, yday(Date) - 273, yday(Date) + 92)
+
+# Function to convert wDay to month name
+wDay_to_month <- function(wDay) {
+  # Adjust the wDay for the water year
+  adjusted_wDay <- (wDay + 273) %% 365 + 1
+  # Convert the adjusted wDay to a date
+  date <- as.Date(paste(2000, adjusted_wDay), format = "%Y %j")
+  # Return the month name
+  return(format(date, "%b"))
+}
+  
+```
+
+
+```{r p_static_stars_total_survival, include=FALSE}
+
+p_stars_overall_survival <- ggplot(df_stars, aes(x = wDay, group = WY)) +
+  geom_line(aes(y = surv)) +
+  labs(x = 'Month\n(Water Year: Oct-Dec of year [t-1], Jan-Sep of year [t])', 
+       y = 'Apparent survival probability', 
+       title = 'Overall Survival', 
+       subtitle = "Median survival of daily cohorts for all routes combined.") +
+  scale_x_continuous(breaks = seq(1, 365, by = 61), labels = wDay_to_month( seq(1, 365, by = 61))) + 
+  gghighlight(use_direct_label = FALSE) +
+  facet_grid(WY~.) +
+  geom_ribbon(aes(ymin = survL80, ymax = survU80), alpha = 0.5) +
+  theme_minimal() +
+  theme(panel.border = element_rect(color = "grey", fill = NA, size = .25),
+    panel.grid.minor = element_blank(), 
+    panel.grid.major.y = element_blank())
+
+```
+
+
+```{r p_static_stars_int_survival, include=FALSE}
+p_stars_int_survival <- ggplot(df_stars, aes(x = wDay, group = WY)) +
+  geom_line(aes(y = idsurv)) +
+  labs(x = 'Month\n(Water Year: Oct-Dec of year [t-1], Jan-Sep of year [t])', 
+       y = 'Apparent survival probability', 
+       title = 'Interior Delta Route-specific Survival Probability', 
+       subtitle = "Median route-specific survival of daily cohorts using the Interior Delta route") +
+  scale_x_continuous(breaks = seq(1, 365, by = 61), labels = wDay_to_month( seq(1, 365, by = 61))) + 
+  gghighlight(use_direct_label = FALSE) +
+  facet_grid(WY~.) +
+  geom_ribbon(aes(ymin = idsurvL80, ymax = idsurvU80), alpha = 0.5) +
+  theme_minimal() +
+  theme(panel.border = element_rect(color = "grey", fill = NA, size = .25),
+      panel.grid.minor = element_blank(), 
+      panel.grid.major.y = element_blank())
+
+
+```
+
+
+```{r p_static_stars_route_probability, include=FALSE}
+
+p_stars_route_probability <- ggplot(df_stars, aes(x = wDay, group = WY)) +
+  geom_line(aes(y = idsurv)) +
+  labs(x = 'Month\n(Water Year: Oct-Dec of year [t-1], Jan-Sep of year [t])', 
+       y = 'Route probability', 
+       title = 'Interior Delta Route-specific Probability', 
+       subtitle = "Proportion of daily cohorts using the Interior Delta route") +
+  scale_x_continuous(breaks = seq(1, 365, by = 61), labels = wDay_to_month( seq(1, 365, by = 61))) + 
+  gghighlight(use_direct_label = FALSE) +
+  facet_grid(WY~.) +
+  geom_ribbon(aes(ymin = idsurvL80, ymax = idsurvU80), alpha = 0.5) +
+  theme_minimal() +
+  theme(panel.border = element_rect(color = "grey", fill = NA, size = .25),
+        panel.grid.minor = element_blank(), 
+        panel.grid.major.y = element_blank())
+
+```
+
+ 
+```{r combine_plots, fig.height=12, fig.width=12}
+p_stars <- p_stars_overall_survival / (p_stars_int_survival + p_stars_route_probability)
+
+
+p_stars <- p_stars +  
+  plot_annotation(title = "STARS Model - Predicted Winter Run Chinook Salmon daily cohorts passage from Knights Landing to Chipps Island",
+                  caption = "Data source: STARS Shiny App, Years of data: 2018 to 2024")
+
+p_stars
+```
+
+
+---
+
+Issues: 
+
+- Nick shared code to get latest STARs output. 
+
+   - To have real-time generated data for shiny, we'll need to host in Linux server and have Susannah work her magic. Future update
+   
+- Determine best layout - possibly combine on one plot?
+
+- Why are we highlighting one year compared to all years? Want to focus on current year compared to past years? Better way to approach?
+   
+- Include a shiny app to see hydrological year types? See `app.R` for basic shiny version
+   
+     - hoover label: best to just rename the datafile for geom_line() -- using tooltip was not working. Look into how to drop gghighlight tooltip
+     
+     - update to using aes versus aes_string somehow and be able to plot x_var-- see warning 
+     
+     - plotly size 
+
+## Figure 3. Juvenile Production Estimate - Percent Loss 
+
+```{r shared_genetic_data , include=FALSE}
+#pull in JPES and genetic loss data (will pull from CBR - SI/MC working towards) 
+#currently used for fig3a & 3b
+ JPE_Genetic_Loss_Comparison<- read_csv(here::here('track-a-cohort/shared files/JPE_Genetic_Loss_Comparison.csv'))
+
+
+jpe_long <- JPE_Genetic_Loss_Comparison %>% 
+  select(WaterYear,BroodYear,JuvenileProductionEstimate,"pct_gen" = PercentJPE_genetic,"pct_lad" = PercentJPE_LAD, "count_lad" = WinterRun_LAD_Loss, "count_gen" = WinterRun_Genetic_Loss) %>%   
+  pivot_longer(cols = c(pct_lad, pct_gen, count_lad, count_gen),
+               names_to = "method",
+               values_to = "value")
+```
+
+```{r import_loss_data, include=FALSE}
+url<- "https://www.cbr.washington.edu/sacramento/data/php/rpt/juv_loss_detail.php?sc=1&outputFormat=default&year=all&species=1%3Af&dnaOnly=no&age=no"
+
+#filter to include only winter-run chinook for LAD or winter-run for DNA
+loss.wch <- read.csv(url) %>%
+  filter(LAD.Race == 'Winter'| DNA.Race == 'Winter') 
+  
+#adjust imported loss to WY 
+df_loss <- loss.wch %>% select(Sample.Time, Facility, LAD.Race, DNA.Race,nfish, Loss) %>%
+  mutate(Date = as.Date(Sample.Time)) %>%
+  arrange(Date) %>%
+  mutate(WY = year(Date) + (month(Date) >= 10),
+         wDay = if_else(month(Date) >= 10, yday(Date) - 273, yday(Date) + 92),
+         doy = yday(Date),
+         CY = year(Date),
+         wDate = if_else(month(Date) >= 10, Date + years(1), Date))
+
+#pull in shared wytype.csv-- look to automate this process (in progress MC^2)
+wytype <- read_csv(here::here('track-a-cohort/shared files/WYtype.csv')) %>% filter(Basin == "SacramentoValley")
+
+
+#Further filter to only plot winter-run chinook for LAD
+cumulativeLAD <- df_loss %>% 
+  filter(LAD.Race == 'Winter') %>% 
+  group_by(WY) %>%
+  mutate(cumloss = cumsum(Loss)) %>%
+  #designate pre/post 2009 BiOp
+  mutate(Status = case_when(WY < 2009 ~ 'Pre-2009 BiOp\n(1994 to 2008)',
+                            WY > 2008 ~ '2009 & 2019 BiOp\n(2009 to present)')) %>%
+  #set order of factor levels
+  mutate(Status = factor(Status, levels = c('Pre-2009 BiOp\n(1994 to 2008)', '2009 & 2019 BiOp\n(2009 to present)'))) %>% 
+  #join with wytype to designate wet/dry year (Hydrologic Classification Index?)
+  left_join(select(wytype,WY, "hydro_type" = `Yr-type`) , by = 'WY') %>%
+  #remove date na's
+  filter(!is.na(Date)) %>%
+  # #label historical versus current year
+  # mutate(History = if_else(WY == '2024', 'Current', 'Past')) %>%
+  #relabel wytype Yr.type to Wet/Dry -- add all?
+  mutate( hydro_type = factor(hydro_type, levels = c("W", "AN", "BN", "D", "C"), labels = c("Wet", "Above Normal", "Below Normal", "Dry", "Critical")),
+          hydro_type_grp = case_when(
+                                      hydro_type %in% c("Wet", "Above Normal") ~ "Wet, Above Normal",
+                                      hydro_type %in% c("Below Normal", "Dry", "Critical") ~ "Below Normal, Dry, & Critical" )
+          )
+
+#summarise by pct_cumloss - figure 3b
+df_pct_cumloss<-cumulativeLAD %>% 
+  group_by(WY, wDay, hydro_type_grp) %>% 
+  summarise(cumloss = max(cumloss)) %>% 
+  inner_join(select(jpe,WY, "jpe_value" = value), by = "WY") %>% 
+  mutate(pct_cumloss = cumloss/jpe_value)
+```
+
+### Figure 3a. JPE percent loss - bar plot {-}
+
+
+```{r p_jpe_pct_los_barplot, fig.width=10, echo = FALSE, warning = FALSE, message=FALSE}
+#bar plot of genetic and LAD loss
+p_jpe_pct_loss_barplot <- jpe_long %>% 
+  filter(method %in% c("pct_lad", "pct_gen")) %>% 
+  ggplot(aes(x=as.factor(BroodYear), y= value, fill=method)) +
+  geom_bar(stat="identity", position=position_dodge())+
+  labs(title = "Genetic vs Length-At-Date (LAD) Historical Percent Loss of the JPE\n",
+       x = "Brood Year", 
+       y = "Percent of the JPE Lost", #change title
+       fill = NULL) +
+  scale_y_continuous(breaks = seq(0, 6, by = 2), limits = c(0, 6), expand = c(0, 0))+
+  scale_fill_manual(values = c("black", "grey"),
+                    breaks = c("pct_gen", "pct_lad"),
+                    labels = c("Genetic", "LAD"))+
+  theme_minimal() +
+    theme(legend.position = c(.9,.65), 
+          axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5),
+          panel.grid.major.x = element_blank(), 
+          axis.line.x = element_line(color = "black", .5),
+          axis.ticks.x = element_line(color = "black"), 
+          text = element_text(size = 15))
+
+p_jpe_pct_loss_barplot
+```
+
+### Figure 3b. Cumulative percent Loss {-}
+
+```{r p_cum_pct_loss, echo=FALSE, message=FALSE, warning=FALSE, fig.height=8, fig.width=10}
+
+# extract current year
+current_year<-year(today())
+
+# calculate the maximum pct_cumloss for the current year
+max_pct_cumloss_current_year <- df_pct_cumloss %>%
+  filter(WY == current_year) %>%
+  group_by(WY) %>% 
+  summarise(max_pct_cumloss = max(pct_cumloss)) %>%
+  pull(max_pct_cumloss)
+
+#extract maximum pct_cumloss for each year (for labels)
+max_pct_cumloss_per_year <-df_pct_cumloss %>%
+  group_by(WY) %>%
+  filter(cumloss == max(cumloss))
+
+
+#plot all years together  
+df_pct_cumloss %>% 
+ ggplot() +
+  geom_line( data = . %>% filter( WY != current_year), aes(x=wDay, y = pct_cumloss, group = WY, color = hydro_type_grp ), lwd = .25)+
+  geom_line( data = . %>% filter( WY == current_year), aes( x=wDay, y = pct_cumloss, group = WY, linetype = as.factor(WY)), color = "black", lwd = 1)+
+  labs(x = 'Date \n(Water Year: Oct-Dec of year [t-1], Jan-Sep of year [t])', 
+       y = 'Percent Cumulative Loss', 
+       title = 'Winter-run Chinook salmon - Current and Historical Percent Cumulative Loss',
+       subtitle = " Data includes: WY1994 to WY2024",
+       color = "Hydrological Year Type:",
+       linetype = "Current Water Year:") +
+  scale_x_continuous(breaks = seq(1, 365, by = 61), labels = wDay_to_month( seq(1, 365, by = 61))) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_color_manual(values = c("brown", "cadetblue3", "grey"), 
+                     labels = c("Below Normal, Dry, & Critical", "Wet, Above Normal", "WY2023"))+ #look into automating naming for NA
+  ggrepel::geom_text_repel(data = max_pct_cumloss_per_year %>% 
+                             filter(pct_cumloss >= max_pct_cumloss_current_year), 
+                           aes(x = wDay, y = pct_cumloss, label = WY), size = 3, nudge_y = .001) +
+  guides(linetype = guide_legend(order = 1), color = guide_legend(order = 2)) +
+  theme_minimal() +
+  theme(legend.position = "right",
+        panel.grid.major.x = element_blank(), 
+        axis.line.x = element_line(color = "black", .5),
+        axis.line.y = element_line(color = "black", .5),
+        axis.ticks.x = element_line(color = "black"), 
+        text = element_text(size = 15))
+
+
+```
+
+---
+
+Issues: 
+- Fig 3: 
+
+  - updating naming and source files (work with Susannah)
+
+- Fig3a : 
+
+  - uses 02_HistoricWRSalvageandLoss.R - Nick Bertrund's code
+
+  - `JPE_Genetic_Loss_Comparison.csv` is the current underlying flat file. Future update, pending decision on which QA/QC'd genetic data to use for comparison. Update with query string in time. 
+
+
+
+## Figure 4. Juvenile Production Estimate - Total Number Lost
+
+### Figure 4a. JPE number loss - bar plot {-}
+```{r p_jpe_genetic_loss_count, fig.width=10, echo = FALSE, warning=FALSE, message=FALSE}
+
+#bar plot of genetic and LAD loss
+p_jpe_count_barplot <- jpe_long %>% 
+  filter(method %in% c("count_lad", "count_gen")) %>% 
+  ggplot( aes(x=as.factor(BroodYear), y= value, fill=method)) +
+  geom_bar(stat="identity", position=position_dodge())+
+  labs(title = "Genetic vs Length-At-Date (LAD) Historical Number Lost of the JPE\n")+
+  labs(x = "Brood Year", 
+       y = "Number of Winter-run JPE lost", #change title
+       fill = NULL) +
+  scale_y_continuous(labels = scales::comma) +
+  # scale_y_continuous(breaks = seq(0, 20000, by = 5000), limits = c(0, 20000), expand = c(0, 0))+
+  scale_fill_manual(values = c("black", "grey"),
+                  labels = c("Genetic", "LAD"),
+                  breaks = c("count_gen", "count_lad")) +
+  theme_minimal() +
+    theme(legend.position = c(.9,.65), 
+          axis.text.x = element_text(angle = 90, hjust = 1, vjust = .5),
+          panel.grid.major.x = element_blank(), 
+          axis.line.x = element_line(color = "black", .5),
+          axis.ticks.x = element_line(color = "black"), 
+          text = element_text(size = 15))
+
+p_jpe_count_barplot
+```
+
+
+
+### Figure 4b. Cumulative number loss by hydrological season type and BiOp year {-}
+
+```{r p_cum_loss_facet, echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=8, fig.cap= "The grey lines are all years of cumulative loss, with the highlighted years indicating hydrological type; red for Below Normal, Dry, & Critical years, and blue for Wet, Above Normal hydrological years. The black line represents current WY (2024) cumulative loss, with the dashed line indicating the max cumulative loss in that year. Years that are above the current years' maximum cumulative loss are labelled with respective WY."}
+#plot by dry/wet and pre/post 2009 BiOp
+
+#extract max cumloss of 2024 to adjust color 
+max2024LAD <- cumulativeLAD %>% 
+  filter(WY == current_year) %>% 
+  summarise(max_cumloss = max(cumloss)) %>% 
+  pull(max_cumloss)
+
+#extract maximum cumloss for each year (for labels)
+max_cumloss_per_year <- cumulativeLAD %>%
+  filter(!is.na(hydro_type_grp)) %>% #currently removes WY2023 or year prior to current year since no hydro assigned
+  group_by(WY) %>%
+  filter(cumloss == max(cumloss))
+
+#Data frame that contains only the data for the year 2001 (for year labels excluding >10,000)
+year2001_data <- cumulativeLAD %>% filter(WY == 2001, cumloss < 10000)
+
+#appending current water year results for each facet regardless of year
+loss_current_year <- cumulativeLAD %>% filter(WY == current_year) %>% select(wDay, cumloss)
+
+p2 <- cumulativeLAD %>%
+  filter(cumloss < 10000) %>%
+  #currently removes WY2023 or year prior to current year since no hydro assigned - consider alternative
+  filter(!is.na(hydro_type_grp)) %>% 
+  ggplot() +
+  geom_line( data = . %>% filter(WY == current_year ), aes(x = wDay, y = cumloss, group = WY), color = "black") +
+  geom_line( data = . %>% filter(WY != current_year ), aes(x = wDay, y = cumloss, group = WY, color =  hydro_type_grp)) +
+  geom_hline(yintercept = max2024LAD, linetype = "dashed", color = "black") +
+  geom_text(aes(x = 250, y = max2024LAD), label = "WY2024 cumulative loss", size = 2.5, vjust = -0.5, fontface = "plain" ) +
+  gghighlight() +
+  ggrepel::geom_text_repel(data = subset(max_cumloss_per_year, cumloss >= max2024LAD & WY !=2001), 
+                           aes(x = wDay, y = cumloss, label = WY), 
+                           size = 3,  nudge_y = 20, nudge_x = 2) +
+  geom_text(data = year2001_data, 
+            aes(x = 170, y = 9500, label = "*2001\nmax value = 20,062"), 
+            size = 3, fontface = "plain") +
+  labs(x = 'Date \n(Water Year: Oct-Dec of year [t-1], Jan-Sep of year [t])', 
+       y = 'Cumulative Loss', 
+       title = 'Winter-run Chinook salmon -  Current and Historical Cumulative Loss',
+       subtitle = "Data includes: WY1994 to WY2024") +
+  scale_x_continuous(breaks = seq(1, 365, by = 61), labels = wDay_to_month( seq(1, 365, by = 61))) + 
+  scale_y_continuous(labels = scales::comma, breaks = seq(0, 10000, by = 2000), limits = c(0, 10000), expand = c(0, 0)) +
+  ggh4x::facet_nested(hydro_type_grp ~ Status ) + 
+  geom_line(data = loss_current_year, aes(x = wDay, y = cumloss), color = "black") +
+  theme_minimal() +
+  theme(
+     axis.line = element_line(color = "grey"),
+    panel.grid.major.x = element_blank(), 
+    panel.border = element_rect(color = "grey", fill = NA),
+    panel.spacing = unit(1, "cm"),
+    axis.ticks.x = element_line(color = "black"), 
+    text = element_text(size = 15, family = "Arial"))
+p2
+
+
+
+```
+
+---
+
+Questions: 
+
+- query from : https://www.cbr.washington.edu/sacramento/data/query_loss_detail.html with all years, species, and no LAD age restriction, but  requires dna?
+
+- filters to include winter for LAD OR winter for DNA, which also filters to include only chinook
+  - could filter further to include only winter-run chinook for LAD and DNA diff or ~5700 to ~1700
+
+- for some reason, the [url generated via query tool](https://www.cbr.washington.edu/sacramento/data/php/rpt/juv_loss_detail.php?sc=1&outputFormat=default&year=all&species=1%3Aall&dnaOnly=yes&age=no)  for all chinook, all years, and no LAD age restriction, but requires dna, does not return nearly as many records as the url generated by BOR. Will use theres for now-- look into why. 
+
+- Uses WYtype.csv -- what is this data? Headers include: WY, Basin, Oct-Mar, Apr-Jul, WYsum, Index, Yr-type -- Yr-type seems to be designating dry/wet  year -- where can this be sourced? This information will be hosted on SacPas updated website June 2024. The data is pulling from [CDEC](https://cdec.water.ca.gov/reportapp/javareports?name=WSIHIST). Working with static file until I can update. 
+
+
+
+## Figure 6. Cumulative loss by type with annual loss thresholds
+
+* still working on setting threshold values
+
+```{r import_code_shared, eval=FALSE, include=FALSE}
+library(tidyverse)
+library(readr)
+library(busdater)
+library(patchwork)
+library(rvest)
+#set source folder, destination folder, and read in most recent salmon and steelhead files
+#pulling in most recent steelhead salvage
+url <- "https://filelib.wildlife.ca.gov/Public/salvage/Salmon%20Monitoring%20Team/" #salvage files url
+page <- read_html(url) #read url in
+links <- page %>% html_nodes("a") %>% html_attr("href") # Extract all links from the webpage
+salmon_links <- links[grep("salmon_", links, ignore.case = TRUE)]  # Select files containing "salmon_"
+salmon_links <- salmon_links[!grepl("summary", salmon_links, ignore.case = TRUE)]  # Exclude files containing "summary"
+salmon_links <- salmon_links[!grepl("table", salmon_links, ignore.case = TRUE)] # Exclude files containing "table"
+file <- max(grep("\\.csv$", salmon_links, value = TRUE, ignore.case = TRUE)) #isolate the most recent salmon salvage table
+
+#read in salmon salvage file
+salmon <- read.csv(paste0('https://filelib.wildlife.ca.gov/',file)) %>%
+  mutate(SampleDate = as.Date(SampleDate))
+
+#summarize genetic daily limit exceedance. Resulting table is Table 1.
+daily_trigger <- salmon %>% filter(DNA_Race == 'W') %>%
+  group_by(SampleDate) %>% summarize(Loss = sum(LOSS, na.rm = TRUE)) %>%
+  mutate(Perc_JPE = (Loss/234896)*100) %>%
+  mutate(Threshold = case_when(month(SampleDate) == 1 ~ .00124, #add in daily trigger limit by month
+                              month(SampleDate) == 2 ~ .00231,
+                              month(SampleDate) == 3 ~ .00372,
+                              month(SampleDate) == 4 ~ .00226,
+                              month(SampleDate) == 5 ~ 0)) %>%
+  mutate(Trigger = if_else(Perc_JPE > Threshold, 'Y', 'N')) #check if genetic loss exceeds daily trigger
+
+
+#filtering for LAD WR and Genetic WR and recombining into dataframe for graph
+salmonLAD <- salmon %>% 
+  filter(ADCLIP == 'N', Size_Race == 'W') %>%
+  select(Date = 2,13) %>% 
+  replace(is.na(.), 0) %>% 
+  mutate(cumlost = cumsum(LOSS)) %>%
+  mutate(Type = 'Length at Date')
+salmonGen <- salmon %>%
+  filter(ADCLIP == 'N', DNA_Race == 'W') %>%
+  select(Date = 2,13) %>% 
+  replace(is.na(.), 0) %>% 
+  mutate(cumlost = cumsum(LOSS)) %>%
+  mutate(Type = 'Genetic') %>% 
+  bind_rows(tibble(Date = max(salmonLAD$Date), 
+                   LOSS = max(.$LOSS),
+                   cumlost = max(.$cumlost), 
+                   Type = 'Genetic'))
+salmonAll <- bind_rows(salmonLAD, salmonGen)
+
+```
+
+
+```{r import_salvage_data_cbr, eval=FALSE, include=FALSE}
+#currently works off of link previously generated that pull all years of data-- this further filters to the current water year (i.e., CY =2024, pulls 10-1-23 to 9-30-24)
+
+# Get the current year
+current_year <- year(Sys.Date())
+
+# Specify the start and end dates
+start_date <- as.Date(paste0(current_year - 1, "-10-01"))
+end_date <- as.Date(paste0(current_year, "-09-30"))
+
+# extract JPE current loss year --needs automatiu
+JPE_currentyear<-JPE_Genetic_Loss_Comparison %>% filter(WaterYear == current_year) %>% pull(JuvenileProductionEstimate)
+
+# Filter the data
+df_loss_current_year <- df_loss %>%
+  filter(Date >= start_date & Date <= end_date) %>% 
+  filter(DNA.Race == "Winter" | LAD.Race == "Winter")
+
+# Calculate the daily trigger
+df_trigger <- df_loss_current_year %>%
+  group_by(Date) %>% summarize(loss = sum(Loss, na.rm = TRUE)) %>%
+  #divide loss by current year JPE to get percent JPE loss
+  mutate(pctJPE = (loss/JPE_currentyear)*100) %>%
+  #where are these daily triggers being selected from?
+  mutate(threshold = case_when(month(Date) == 1 ~ .00124, #add in daily trigger limit by month
+                              month(Date) == 2 ~ .00231,
+                              month(Date) == 3 ~ .00372,
+                              month(Date) == 4 ~ .00226,
+                              month(Date) == 5 ~ 0)) %>%
+  #designate if genetic loss exceeds daily trigger
+  mutate(trigger = if_else(pctJPE > threshold, 'Y', 'N')) 
+
+#calculate cumulative loss for LAD and Genetic
+df_lad<-df_loss_current_year %>% 
+  filter(LAD.Race == "Winter") %>% 
+  group_by(Date) %>% 
+  summarise(sum.loss = sum(Loss)) %>% 
+  mutate(cumloss = cumsum(sum.loss),
+         type = "LAD")
+
+df_dna<-df_loss_current_year %>% 
+  filter(DNA.Race == "Winter") %>% 
+  group_by(Date) %>% 
+  summarise(sum.loss = sum(Loss)) %>% 
+  mutate(cumloss = cumsum(sum.loss),
+         type = "DNA")
+  
+ df_combined <- bind_rows(df_lad, df_dna) 
+
+```
+
+```{r set_thresholds, eval = FALSE, include=FALSE}
+JPE_2024_02<-round(JPE_currentyear * .02) 
+
+JPE_2024_1.3<-(sum(234896 + 49924 + 125038)/3)*.013
+
+round(JPE_currentyear*.017)
+
+#get greatest annual loss from 2010-2018:
+max_lad_loss<-df_loss %>%
+  filter(between(WY, 2010,2018)) %>% 
+  filter(LAD.Race == "Winter") %>% 
+  group_by(WY) %>% 
+  summarise(annual_loss = sum(Loss)) %>%
+  filter( annual_loss == max(annual_loss)) %>% 
+  pull(annual_loss)*.9 #annual threshold is 90% the maximum annual loss from 2010-2018
+
+4359.90	*.9
+```
+https://www.cbr.washington.edu/sacramento/workgroups/salmon_monitoring.html#:~:text=Natural%20Winter%2DRun%20Chinook%20Salmon%20Loss
+
+```{r eval = FALSE, include=FALSE}
+df_combined %>% 
+  ggplot(aes(x = Date, y = cumloss)) +
+  geom_line() +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b") +
+  geom_hline(thresholdsLAD, mapping = aes(yintercept = values, 
+                                             linetype = Thresholds), 
+             linewidth = 0.5) + 
+  geom_text(SalthresholdsLAD, mapping = aes(x = as.Date(min(salmonAll$Date))-7, y = values, 
+                                            label = c('50% Annual Loss Threshold (LAD)', '75%', 
+                                                      '100%', 'Single-year ITL (2% of JPE)')), 
+            fontface = 'bold', vjust = 1.4, size = 3, color = '#333333', hjust=0) +
+  geom_vline(aes(xintercept = as.Date('2024-03-11')), linewidth = 1, 
+             linetype = 'dashed', color = 'darkgreen', alpha = 0.6) +
+  geom_text(aes(x = as.Date('2024-03-10'), y = 4000, label = '-500 flow \n action'), 
+            hjust = .95, fontface = 'bold', size = 3)
+  facet_grid(~type)
+  theme_minimal()
+```
+
+```{r shared_plot_code_1, eval=FALSE, include=FALSE}
+#graph for LAD salmon
+SalthresholdsLAD <- data.frame(Thresholds = c('50%', '75%', '100%', 'Single-year ITL (2% of JPE)'), values = c(1374, 2061, 2748, 4698))
+
+
+salmonmax <- salmonAll %>% group_by(Type) %>% summarize(Date = max(Date), cumlost = max(cumlost))
+Sal1 <- ggplot() + 
+  geom_line(filter(salmonAll, Type == 'Length at Date'), 
+            mapping = aes(x = Date, y = cumlost), 
+            linewidth = 1,
+            color = 'steelblue3') + 
+  geom_hline(SalthresholdsLAD, mapping = aes(yintercept = values, 
+                                             linetype = Thresholds), 
+             linewidth = 0.5) + 
+  geom_text(SalthresholdsLAD, mapping = aes(x = as.Date(min(salmonAll$Date))-7, y = values, 
+                                            label = c('50% Annual Loss Threshold (LAD)', '75%', 
+                                                      '100%', 'Single-year ITL (2% of JPE)')), 
+            fontface = 'bold', vjust = 1.4, size = 3, color = '#333333', hjust=0) +
+  geom_vline(aes(xintercept = as.Date('2024-03-11')), linewidth = 1, 
+             linetype = 'dashed', color = 'darkgreen', alpha = 0.6) +
+  geom_text(aes(x = as.Date('2024-03-10'), y = 4000, label = '-500 flow \n action'), 
+            hjust = .95, fontface = 'bold', size = 3) +
+  geom_label(filter(salmonmax, Type == 'Length at Date'), mapping = aes(x = Date + 1, y = cumlost+150,
+                                                                        label = paste0(cumlost,
+                                                                                       ' (',round(((cumlost/4698)*100),1),'%)')), size = 3) +
+  labs(y = 'Cumulative Loss', x = 'Date', title = 'Winter-run LAD Loss') + 
+  scale_y_continuous(breaks = seq(0,plyr::round_any(max(SalthresholdsLAD$values), 1000, ceiling), 500)) +
+  scale_x_date(date_breaks = '3 weeks', date_labels = "%b %d", limits = c(as.Date('2024-01-01'), Sys.Date() + 14)) +
+  guides(linetype = FALSE) +
+  theme(legend.position = 'none',
+        plot.margin = margin(0.2,0.2,0.2,0.2, unit = 'cm'),
+        axis.title.y = element_text(margin=margin(r=15), size = 15),
+        axis.title.x = element_text(margin=margin(t=15), size = 15))
+Sal1
+```
+
+
+```{r shared_plot_code_2, eval=FALSE, include=FALSE}
+#graph for genetic salmon
+SalthresholdsGen <- data.frame(Thresholds = c('50%', '75%', '100%'), values = c(592, 888, 1184))
+salmonmax <- salmonAll %>% group_by(Type) %>% summarize(Date = max(Date), cumlost = max(cumlost))
+Sal2 <- ggplot() + 
+  geom_line(filter(salmonAll, Type == 'Genetic'), 
+            mapping = aes(x = Date, y = cumlost), 
+            linewidth = 1,
+            color = 'steelblue3') + 
+  geom_hline(SalthresholdsGen, mapping = aes(yintercept = values, 
+                                             linetype = Thresholds), 
+             linewidth = 0.5) + 
+  geom_text(SalthresholdsGen, mapping = aes(x = as.Date(min(salmonAll$Date))-7, y = values, 
+                                            label = c('50% Annual Loss Threshold (Genetic)', '75%', 
+                                                      '100%')), 
+            fontface = 'bold', vjust = 1.4, color = '#333333', hjust=0, size = 3) +
+  geom_vline(aes(xintercept = as.Date('2024-03-11')), linewidth = 1, 
+             linetype = 'dashed', color = 'darkgreen', alpha = 0.6) +
+  geom_text(aes(x = as.Date('2024-03-10'), y = 4000, label = '-500 flow \n action'), 
+            hjust = .95, fontface = 'bold', size = 3) +
+  geom_label(filter(salmonmax, Type == 'Genetic'), mapping = aes(x = Date + 1, y = cumlost+150,
+                                                                 label = paste0(cumlost,
+                                                                                ' (',round(((cumlost/1184)*100),1),'%)')), size = 3) +
+  labs(y = 'Cumulative Loss', title = 'Winter-run Genetic Loss') + 
+  scale_y_continuous(breaks = seq(0,plyr::round_any(max(SalthresholdsLAD$values), 1000), 100), limits = c(0, 1200)) +
+  scale_x_date(date_breaks = '3 weeks', date_labels = "%b %d", limits = c(as.Date('2024-01-01'), Sys.Date() + 14)) +
+  guides(linetype = FALSE) +
+  theme(legend.position = 'none',
+        plot.margin = margin(0.2,0.2,0.2,0.2, unit = 'cm'),
+        axis.title.x = element_text(margin=margin(t=15), size = 15))
+Sal2
+```
+
+
+```{r shared_plot_code_combined, eval=FALSE, include=FALSE}
+WRGraph <- Sal1|(Sal2 +
+                   theme(axis.text.y = element_blank(),
+                         axis.title.y = element_blank()) +
+                   scale_y_continuous(breaks = seq(0,plyr::round_any(max(SalthresholdsLAD$values), 1000), 500), 
+                                      limits = c(0, max(SalthresholdsLAD$values))))
+WRGraph #This is figure 7
+
+```
+
+```{r, eval = FALSE, include=FALSE}
+
+thresholdsLAD <- data.frame(Thresholds = c('50%', '75%', '100%', 'Single-year ITL (2% of JPE)'), values = c(1374, 2061, 2748, 4698))
+```
+
+
+---
+
+Questions:
+
+- get JPE data source updated
+
+- pull salvage loss and filter to current year 
+
+- pull monthly daily triggers and update plot -- where are these daily triggers being selected from?
+
+- Where are the threshold values being calculated. The 2% single year JPE represents: 
+"Loss of natural winter-run Chinook salmon, is 1.3% of the JPE on a three-year rolling
+average or 2.0% of the JPE in any single year." 
+
+  - but where is the 100%, 75%, 50% coming from? 
+  
+  - And, why is there a difference for LAD versus genetic data threshold values?
+    
+    - https://www.cbr.washington.edu/sacramento/workgroups/salmon_monitoring.html#:~:text=Single%2DYear%20Loss%20Thresholds%20(PA,Salmon%20(loss%3D%201.17%25%20of%20JPE)
+  
+- What is the significance of the -500 flow action?
