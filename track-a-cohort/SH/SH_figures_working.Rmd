@@ -1,0 +1,105 @@
+---
+title: "Track-a-cohort: Figures"
+sutitle: "Steelhead"
+output: 
+  html_document:
+    code_folding: hide
+date: "Updated: 2024-06-17"
+---
+
+
+#  {.tabset}
+
+**Background**
+
+Objective: Using shared resources via [BDO github](https://github.com/BDO-Science/track-a-cohort) from BOR, replicate figures and adjust to include dynamic data. See 
+[Track a cohort_Steelhead.docx](https://github.com/BDO-Science/track-a-cohort/blob/main/SH_Cohort/Track%20a%20Cohort_Steelhead.docx) for figures requested. Also consider future additions including more interactive capabilities to certain graphs in form of Rmarkdown and/or shinyapp.
+
+Issues: 
+
+- For all figures -- confirm method used to assign month to plots based on wDay. 
+
+- Update naming to improve accuracy
+
+- update data sources
+
+```{r load_libraries, include=FALSE, warning=FALSE, message=FALSE}
+library(here) #to designate file pathways
+library(tidyverse) #data manipulation, includes pkgs such as lubridate and ggplot
+library(gghighlight) #for stars plot- highlight certain years
+library(plotly) #for interactive plots
+library(ggrepel) #for ggplot labels
+library(xts) #NB code to import STARs data
+library(patchwork) #for combining plots
+library(data.table) #for reading in data
+```
+
+
+**Current figures**
+
+
+## Figure 1. RBDD Juvenile Passage Estimates Steelhead
+
+code reflect SI graph on CBR: 
+[link](https://www.cbr.washington.edu/sacramento/tmp/redbluffdaily_1718663049_105.html)
+
+```{r import_data, include=FALSE}
+current_year <- year(today())
+
+# Concatenate the current year into the URL
+url <- paste0("https://www.cbr.washington.edu/sacramento/data/php/rpt/redbluff_graph.php?sc=1&outputFormat=csv&byear=",current_year,"&species=Steelhead%3ANA&addData=biweek")
+
+
+# Read in the data
+df_rbdd <-fread(url)
+
+```
+
+
+```{r p_rbdd_passage, echo=FALSE, warning=FALSE, message=FALSE}
+
+
+# Create a data frame of biweekly periods
+df_rbdd$date<- as.Date(df_rbdd$`Date (YYYY-MM-DD)`)
+
+# Create a data frame of biweekly periods -- check to see how this is designated by SI
+biweek_periods <- data.frame(
+  start_date = seq(min(df_rbdd$date), max(df_rbdd$date), by = "2 weeks")
+)
+biweek_periods$end_date <- c(biweek_periods$start_date[-1] - 1, max(df_rbdd$date))
+
+
+df_rbdd %>%
+  janitor::clean_names() %>% 
+  rename( biweek_total = biweek_total_2_3) %>%
+  ggplot(aes(x = date)) +
+  geom_rect(data = biweek_periods, aes(xmin = start_date, xmax = end_date, ymin = -Inf, ymax = Inf), fill = "grey80",alpha =.1, inherit.aes = FALSE) +
+  geom_line(aes(y = estimated_passage, color = "Daily estimate"), shape = 21) +
+  geom_point(aes(y = estimated_passage, color = "Daily estimate"), shape = 21) +
+  geom_pointrange(aes(y = biweek_total / 7.5, ymin = biweek_lower_ci / 7.5, ymax = biweek_upper_ci / 7.5, color = "Biweekly with 90% CI"), shape = 17, linewidth = .5) +
+  scale_y_continuous("Estimated Daily Passage\n(Fish/Day)",
+    sec.axis = sec_axis(trans = ~ . * 7.5, name = "Estimated Biweekly Total\n(Fish/Biweek)"), 
+    expand = c(0,0)
+  ) +
+  coord_cartesian(ylim = c(0, NA)) +
+  scale_color_manual(values = c("Daily estimate" = "steelblue4", "Biweekly with 90% CI" = "purple")) +
+  labs(color = NULL, 
+       x = "Date", 
+       title = paste0("Red Bluff Juvenile Passage Estimate BY", current_year, " Steelhead"), 
+       subtitle = paste0(min(df_rbdd$date)," to ",max(df_rbdd$date))) + 
+  theme_minimal() + 
+  theme(text = element_text(size = 15),
+        legend.position = "bottom",
+        panel.border= element_rect(color = "grey", fill = NA))
+
+```
+
+--- 
+
+Questions: 
+
+- how to assign biweekly periods
+
+- adjust sec axis scale to show 0 values better?
+
+
