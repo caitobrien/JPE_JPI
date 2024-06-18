@@ -8,7 +8,7 @@ date: "Updated: 2024-06-17"
 ---
 
 
-#  {.tabset}
+# {.tabset}
 
 **Background**
 
@@ -32,10 +32,40 @@ library(ggrepel) #for ggplot labels
 library(xts) #NB code to import STARs data
 library(patchwork) #for combining plots
 library(data.table) #for reading in data
+library(janitor) #for cleaning column names
+library(ggridges) #for ridgeline plots
+library(knitr) #for tables
+library(kableExtra) #for table styling
 ```
 
 
 **Current figures**
+
+```{r import_data_00, include=FALSE}
+# import hydrological water year  -- automate when on CBR
+wytype <- read.csv(here::here("track-a-cohort/shared files", "WYtype.csv")) %>% filter(Basin == "SacramentoValley") %>% clean_names()
+
+current_year<-year(today())
+
+```
+
+
+```{r convert_wday_month, include=FALSE}
+
+#reference for how wday was calculated
+# wDay = if_else(month(Date) >= 10, yday(Date) - 273, yday(Date) + 92)
+
+# Function to convert wDay to month name
+wDay_to_month <- function(wDay) {
+  # Adjust the wDay for the water year
+  adjusted_wDay <- (wDay + 273) %% 365 + 1
+  # Convert the adjusted wDay to a date
+  date <- as.Date(paste(2000, adjusted_wDay), format = "%Y %j")
+  # Return the month name
+  return(format(date, "%b"))
+}
+  
+```
 
 
 ## Figure 1. RBDD Juvenile Passage Estimates Steelhead
@@ -43,8 +73,7 @@ library(data.table) #for reading in data
 code reflect SI graph on CBR: 
 [link](https://www.cbr.washington.edu/sacramento/tmp/redbluffdaily_1718663049_105.html)
 
-```{r import_data, include=FALSE}
-current_year <- year(today())
+```{r import_data_01, include=FALSE}
 
 # Concatenate the current year into the URL
 url <- paste0("https://www.cbr.washington.edu/sacramento/data/php/rpt/redbluff_graph.php?sc=1&outputFormat=csv&byear=",current_year,"&species=Steelhead%3ANA&addData=biweek")
@@ -57,7 +86,6 @@ df_rbdd <-fread(url)
 
 
 ```{r p_rbdd_passage, echo=FALSE, warning=FALSE, message=FALSE}
-
 
 # Create a data frame of biweekly periods
 df_rbdd$date<- as.Date(df_rbdd$`Date (YYYY-MM-DD)`)
@@ -101,5 +129,219 @@ Questions:
 - how to assign biweekly periods
 
 - adjust sec axis scale to show 0 values better?
+
+
+
+## Figure 2. STARS -- Steelhead
+
+Currently no model that includes Steelhead, is fall run used as a proxy?
+
+## Figure 3. Loss of wild and hatchery Steelhead
+
+No code on BDO github for this plot-- loss data differs from figure shared
+
+```{r import_data_02, include=FALSE}
+
+loss<- read.csv("https://www.cbr.washington.edu/sacramento/data/php/rpt/juv_loss_detail.php?sc=1&outputFormat=default&year=all&species=2%3Aall&dnaOnly=no&age=no")
+
+df_loss<- loss %>% 
+  janitor::clean_names() %>% 
+  select(sample_time, facility, adipose_clip, length, nfish, loss) %>%
+  mutate(date = as.Date(sample_time)) %>%
+  arrange(date) %>%
+  mutate(WY = year(date) + (month(date) >= 10),
+         wday = if_else(month(date) >= 10, yday(date) - 273, yday(date) + 92),
+         doy = yday(date),
+         CY = year(date),
+         wdate = if_else(month(date) >= 10, date + years(1), date)) %>% 
+  group_by(WY, adipose_clip) %>% 
+  mutate(total_loss = sum(loss)) %>%
+  ungroup() %>% 
+  group_by(WY) %>%
+  mutate(cum_loss = cumsum(loss)) %>%
+ mutate(status = case_when(WY < 2009 ~ 'Pre-2009 BiOp\n(1994 to 2008)',
+                            WY > 2008 ~ '2009 & 2019 BiOp\n(2009 to present)')) %>%
+  #set order of factor levels
+  mutate(status = factor(status, levels = c('Pre-2009 BiOp\n(1994 to 2008)', '2009 & 2019 BiOp\n(2009 to present)'))) %>% 
+  left_join(select(wytype,wy, yr_type) , by = c( 'WY' = "wy" )) %>%
+  filter(!is.na(date)) %>%
+  # mutate(History = if_else(WY == '2024', 'Current', 'Past')) %>%
+  #relabel wytype Yr.type to Wet/Dry -- add all?
+  mutate( hydro_type = factor(yr_type, 
+                              levels = c("W", "AN", "BN", "D", "C"), 
+                              labels = c("Wet", "Above Normal", "Below Normal", "Dry", "Critical")),
+          hydro_type_grp = case_when( hydro_type %in% c("Wet", "Above Normal") ~ "Wet, Above Normal",
+                                      hydro_type %in% c("Below Normal", "Dry", "Critical") ~ "Below Normal, Dry, & Critical" )
+          ) %>% 
+  select(-c(sample_time, doy, CY,yr_type)) %>% 
+  filter(adipose_clip != "") #remove blank adipose clips
+
+```
+
+### Figure 3a. Total loss of wild and hatchery Steelhead
+
+```{r p_loss_barplot, fig.width = 10, fig.height = 6, echo=FALSE, warning=FALSE, message=FALSE}
+df_loss %>% 
+ggplot( aes(x = as.factor(WY), y = total_loss, fill = adipose_clip)) + 
+  geom_bar(stat = "identity", position = "dodge", width = .8) + 
+  labs(title = "Total Loss of Wild and Hatchery Steelhead by Water Year",
+       x = "Water Year\n(Oct-Dec of year [t-1], Jan-Sep of year [t])",
+       y = "Total Loss", 
+       fill = NULL) +
+  scale_fill_manual(values = c("grey30", "grey80")) +
+  scale_y_continuous(labels = scales::comma, expand = c(0,0), limits = c(0, 25000)) +
+  theme_minimal() +
+  theme(text = element_text(size = 15),
+        legend.position = c(.9,.65),
+        axis.text.x = element_text(angle = 90, vjust = .5),
+        panel.border= element_rect(color = "grey80", fill = NA), 
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(), axis.ticks = element_line(size = .25, color = "grey80"))
+
+```
+
+
+### Figure 3b. Size density of wild and hatchery Steelhead
+
+```{r, p_sizedistribution, fig.width = 10, fig.height = 6, echo=FALSE, warning=FALSE, message=FALSE, fig.cap="Underlying density plot shows historical (WY 1994 to WY2023) size distribution by rear type. Current year (WY2024) size distribution is shown as a histogram by rear type. Fork lengths below 750 mm were included"}
+df_loss %>% 
+  filter(length < 750) %>%  #set limit for length -- why 750 seems big?
+  # filter(WY > 2004) %>% #why filtering WY after 2004?
+ggplot() +
+  geom_density( data = . %>% filter(WY != current_year), 
+               mapping = aes(x = length, fill = adipose_clip, color = adipose_clip), alpha = .25) +
+  geom_histogram(data = . %>% filter(WY == current_year), 
+                 mapping = aes(x = length, y=after_stat(density), fill = adipose_clip, color = adipose_clip), 
+                 bins = 50,
+                 alpha = 0.7) +
+  labs(x = 'Fork Length (mm)', 
+       y = 'Density', 
+       title = "Current year (WY2024) size distribution compared to historical size distribution by rear type") +
+  scale_fill_manual(values = c("grey30", "grey70")) +
+  scale_color_manual(values = c("grey30", "grey70")) +
+  facet_wrap(~adipose_clip, ncol = 1) +
+  theme_minimal() +
+  theme(text = element_text(size = 15),
+        legend.position = "none",
+        panel.border= element_rect(color = "grey80", fill = NA), 
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(), axis.ticks = element_line(size = .25, color = "grey80"))
+```
+
+### Figure 3c. Size density of wild and hatchery Steelhead by year
+```{r, p_sizedistribution2, fig.width = 6, fig.height = 10, echo=FALSE, warning=FALSE, message=FALSE}
+df_loss %>% 
+  filter(length < 750) %>%  #set limit for length -- why 750 seems big?
+  # filter(WY > 2004) %>% #why filtering WY after 2004?
+  ggplot(aes(x = length, y = factor(WY))) +
+  geom_density_ridges( aes(fill = adipose_clip, color = adipose_clip), scale = 1.5, draw_baseline = FALSE) +
+  labs(x = 'Fork Length (mm)', 
+       y = 'Water Year', 
+       subtitle = "Historical Steelhead size distribution by rear type", 
+       fill = NULL, color = NULL) +
+  scale_fill_manual(values = c("grey30", adjustcolor("grey70", alpha.f = .7))) +
+  scale_color_manual(values = c("grey30", "grey70")) +
+  # facet_wrap(~adipose_clip, ncol = 1) +
+  theme_minimal() +
+  theme(text = element_text(size = 15),
+        legend.position = "bottom",
+        panel.border= element_rect(color = "grey80", fill = NA), 
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(), axis.ticks = element_line(size = .25, color = "grey80"))
+```
+
+
+## Figure 4. Cumulative loss of wild and hatchery Steelhead by Hydrological Year and BiOp
+
+
+
+```{r p_cum_loss_facet, echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=8, fig.cap= "The grey lines are all years of cumulative loss, with the highlighted years indicating hydrological type; brown for Below Normal, Dry, & Critical years, and blue for Wet, Above Normal hydrological years. The black line represents current WY (2024) cumulative loss, with the dashed line indicating the max cumulative loss in that year. Years that are above the current years' maximum cumulative loss are labelled with respective WY."}
+#plot by dry/wet and pre/post 2009 BiOp
+
+#extract max cumloss of 2024 to adjust color 
+max2024LAD <- df_loss %>% 
+  group_by(WY) %>% 
+  filter(WY == current_year) %>% 
+  summarise(max_cumloss = max(cum_loss)) %>% 
+  pull(max_cumloss)
+
+#extract maximum cumloss for each year (for labels)
+max_cumloss_per_year <- df_loss %>%
+  filter(!is.na(hydro_type_grp)) %>% #currently removes WY2023 or year prior to current year since no hydro assigned
+  group_by(WY) %>%
+  filter(cum_loss == max(cum_loss))
+
+
+#appending current water year results for each facet regardless of year
+loss_current_year <- df_loss %>% filter(WY == current_year) %>% select(wday, cum_loss)
+
+df_loss %>%
+  group_by(WY, wday, status, hydro_type_grp) %>% 
+  # filter(cumloss < 10000) %>%
+  #currently removes WY2023 or year prior to current year since no hydro assigned - consider alternative
+  filter(!is.na(hydro_type_grp)) %>% 
+  ggplot() +
+  geom_line( data = . %>% filter(WY == current_year ), aes(x = wday, y = cum_loss, group = WY), color = "black") +
+  geom_line( data = . %>% filter(WY != current_year ), aes(x = wday, y = cum_loss, group = WY, color =  hydro_type_grp)) +
+  geom_hline(yintercept = max2024LAD, linetype = "dashed", color = "black") +
+  geom_text(aes(x = 330, y = max2024LAD), label = "WY2024 cumulative loss", size = 2.5, vjust = -0.5, fontface = "plain" ) +
+  gghighlight() +
+  ggrepel::geom_text_repel(data = subset(max_cumloss_per_year, cum_loss >= max2024LAD ), #& WY !=2001
+                           aes(x = wday, y = cum_loss, label = WY), 
+                           size = 3, direction = "y",vjust = 1,  nudge_y = 1, min.segment.length = 0, force = 15) +
+  # geom_text(data = year2001_data, 
+  #           aes(x = 170, y = 9500, label = "*2001\nmax value = 20,062"), 
+  #           size = 3, fontface = "plain") +
+  labs(x = 'Date \n(Water Year: Oct-Dec of year [t-1], Jan-Sep of year [t])', 
+       y = 'Cumulative Loss', 
+       title = 'Steelhead -  Current and Historical Cumulative Loss',
+       subtitle = "Data includes: WY1994 to WY2024") +
+  scale_x_continuous(breaks = seq(1, 365, by = 61), labels = wDay_to_month( seq(1, 365, by = 61))) + 
+  scale_y_continuous(labels = scales::comma,limits = c(0, 40000),  expand = c(0, 0)) +
+  scale_color_manual(values = c( "sienna4", "steelblue4"))+
+  ggh4x::facet_nested(hydro_type_grp ~ status ) + 
+  geom_line(data = loss_current_year, aes(x = wday, y = cum_loss), color = "black") +
+  theme_minimal() +
+  theme(
+     axis.line = element_line(color = "grey"),
+    panel.grid.major.x = element_blank(), 
+    panel.border = element_rect(color = "grey", fill = NA),
+    panel.spacing = unit(.5, "cm"),
+    axis.ticks.x = element_line(color = "black"), 
+    text = element_text(size = 15, family = "Arial"))
+
+
+
+
+```
+
+## Figure 5. Natural Steelhead Cumulative Loss with Historical Loss and Single-year Thresholds
+
+Ask SI where STL release data is on sacpas
+
+## Table 1. Minimization of Cumulative Loss of Hatchery Steelhead
+```{r}
+df_tbl1<- df_loss %>% 
+  filter(adipose_clip == "Clipped") %>%
+  group_by(WY) %>% 
+  summarise(total_fish = sum(nfish),
+            total_loss = sum(loss),
+            pct_loss_faciliy = scales::percent((total_fish/total_loss), accuracy = .01),
+            BY = WY-1) %>% 
+  rename(`Brood Year` = BY, `Total released` = total_fish, `Total Loss` = total_loss, `Percent of fish released lost to facilities` = pct_loss_faciliy, `Water Year` = WY)
+
+tb1<-knitr::kable(df_tbl1, caption = "Minimization of Cumulative Loss of Hatchery Steelhead by Water Year") %>% 
+  kableExtra::kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F) 
+
+  
+```
+
+
+## Figure 6. Minimization with Daily Loss and Daily Pumping Rates by Facility
+Ask SI where data is on sacpas
+
+## Figure 7. Tillotson Seasonal Predictions of Weekly Loss of Wild Steelhead
+
+Confirm model run -- most recent Tillotson paper? Same as on SacPas ?
 
 

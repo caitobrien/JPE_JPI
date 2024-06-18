@@ -356,7 +356,7 @@ df_pct_cumloss %>%
        linetype = "Current Water Year:") +
   scale_x_continuous(breaks = seq(1, 365, by = 61), labels = wDay_to_month( seq(1, 365, by = 61))) +
   scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
-  scale_color_manual(values = c("brown", "cadetblue3", "grey"), 
+  scale_color_manual(values = c("sienna4", "steelblue4", "grey"), 
                      labels = c("Below Normal, Dry, & Critical", "Wet, Above Normal", "WY2023"))+ #look into automating naming for NA
   ggrepel::geom_text_repel(data = max_pct_cumloss_per_year %>% 
                              filter(pct_cumloss >= max_pct_cumloss_current_year), 
@@ -465,6 +465,7 @@ p2 <- cumulativeLAD %>%
        subtitle = "Data includes: WY1994 to WY2024") +
   scale_x_continuous(breaks = seq(1, 365, by = 61), labels = wDay_to_month( seq(1, 365, by = 61))) + 
   scale_y_continuous(labels = scales::comma, breaks = seq(0, 10000, by = 2000), limits = c(0, 10000), expand = c(0, 0)) +
+    scale_color_manual(values = c("sienna4", "steelblue4")) +
   ggh4x::facet_nested(hydro_type_grp ~ Status ) + 
   geom_line(data = loss_current_year, aes(x = wDay, y = cumloss), color = "black") +
   theme_minimal() +
